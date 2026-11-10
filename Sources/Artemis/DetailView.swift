@@ -203,10 +203,11 @@ struct SeatbeltSection: View {
                 Divider()
 
                 Text("Options").font(.subheadline.weight(.semibold))
-                Toggle("Block incoming connections", isOn: $options.blockIncoming)
+                CheckRow(options.blockNetwork ? "Block incoming connections (included below)" : "Block incoming connections",
+                         isOn: options.blockNetwork ? .constant(true) : $options.blockIncoming)
                     .disabled(options.blockNetwork)
-                Toggle("Block all network access", isOn: $options.blockNetwork)
-                Toggle("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
+                CheckRow("Block all network access", isOn: $options.blockNetwork)
+                CheckRow("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
 
                 if hasUnsavedChanges {
                     HStack {
@@ -219,8 +220,10 @@ struct SeatbeltSection: View {
 
                 Divider()
 
-                DisclosureGroup(entry == nil ? "What managing it would block" : "Exactly what is blocked",
-                                isExpanded: $showDetails) {
+                Disclosure(isExpanded: $showDetails) {
+                    Text(entry == nil ? "What managing it would block" : "Exactly what is blocked")
+                        .font(.subheadline)
+                } content: {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(SeatbeltProfile.protections(appName: app.name, bundleID: app.bundleID, options: options)) { group in
                             ProtectionRow(group: group)
@@ -228,7 +231,6 @@ struct SeatbeltSection: View {
                     }
                     .padding(.top, 4)
                 }
-                .font(.subheadline)
 
                 if let entry {
                     Divider()
@@ -311,7 +313,16 @@ struct ProtectionRow: View {
     @State private var expanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
+        Disclosure(isExpanded: $expanded) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: group.symbol)
+                    .foregroundStyle(group.isBlocked ? Color.blue : Color.orange)
+                    .frame(width: 16)
+                Text(group.title).font(.caption.weight(.medium))
+                Spacer(minLength: 4)
+                Text(group.short).font(.caption2).foregroundStyle(.secondary)
+            }
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 emphasized(group.rule).font(.caption2).foregroundStyle(.secondary)
                 ForEach(group.items, id: \.self) { item in
@@ -322,16 +333,43 @@ struct ProtectionRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 18)
             .padding(.top, 2)
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: group.symbol)
-                    .foregroundStyle(group.isBlocked ? Color.blue : Color.orange)
-                    .frame(width: 16)
-                Text(group.title).font(.caption.weight(.medium))
-                Spacer(minLength: 4)
-                Text(group.short).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A row that shows or hides what is under it. The whole row is the button, not just the arrow.
+struct Disclosure<Label: View, Content: View>: View {
+    @Binding var isExpanded: Bool
+    private let label: Label
+    private let content: Content
+
+    init(isExpanded: Binding<Bool>, @ViewBuilder label: () -> Label, @ViewBuilder content: () -> Content) {
+        _isExpanded = isExpanded
+        self.label = label()
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    label
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+
+            if isExpanded { content }
         }
     }
 }
@@ -433,10 +471,11 @@ struct ManageSheet: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Your choices").font(.headline)
-                Toggle("Block incoming connections", isOn: $options.blockIncoming)
+                CheckRow(options.blockNetwork ? "Block incoming connections (included below)" : "Block incoming connections",
+                         isOn: options.blockNetwork ? .constant(true) : $options.blockIncoming)
                     .disabled(options.blockNetwork)
-                Toggle("Block all network access", isOn: $options.blockNetwork)
-                Toggle("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
+                CheckRow("Block all network access", isOn: $options.blockNetwork)
+                CheckRow("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
                 Text("You can change these later in the details sidebar.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -555,5 +594,38 @@ struct ActivitySection: View {
         } catch {
             problem = error.localizedDescription
         }
+    }
+}
+
+/// A checkbox whose whole row is the click target. Used instead of the system checkbox, which
+/// was not responding reliably inside the details sidebar.
+struct CheckRow: View {
+    let title: String
+    @Binding var isOn: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    init(_ title: String, isOn: Binding<Bool>) {
+        self.title = title
+        _isOn = isOn
+    }
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Image(systemName: isOn ? "checkmark.square.fill" : "square")
+                    .font(.body)
+                    .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                Text(title)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1 : 0.45)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

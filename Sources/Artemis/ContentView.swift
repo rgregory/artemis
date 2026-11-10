@@ -65,12 +65,24 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            table
-            Divider()
-            statusBar
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                table
+                Divider()
+                statusBar
+            }
+
+            // The details sidebar is an ordinary pane, not the system inspector: inside the
+            // inspector, clicks were landing one row below where they were aimed.
+            if showInspector {
+                Divider()
+                DetailView(app: selectedApp)
+                    .frame(width: 340)
+                    .frame(maxHeight: .infinity)
+                    .background(theme.paper ?? Color(nsColor: .windowBackgroundColor))
+            }
         }
         .searchable(text: $search, prompt: "Name, bundle ID, or team")
         .toolbar {
@@ -103,13 +115,6 @@ struct ContentView: View {
                 }
                 .help("Show or hide details")
             }
-        }
-        .inspector(isPresented: $showInspector) {
-            DetailView(app: selectedApp)
-                .environmentObject(seatbelts)
-                .environmentObject(store)
-                .environmentObject(telemetry)
-                .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
         }
         .task {
             seatbelts.telemetry = telemetry
