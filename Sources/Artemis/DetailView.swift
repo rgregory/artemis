@@ -3,6 +3,9 @@ import SwiftUI
 
 struct DetailView: View {
     let app: AppRecord?
+    @EnvironmentObject private var seatbelts: SeatbeltStore
+    @Environment(\.theme) private var theme
+    private var themed: Bool { theme.isCustom }
 
     var body: some View {
         if let app {
@@ -17,16 +20,58 @@ struct DetailView: View {
                             if !app.version.isEmpty {
                                 Text("Version \(app.version)").font(.caption).foregroundStyle(.secondary)
                             }
-                            StatusBadge(app: app)
+                            StatusBadge(app: app, isManaged: seatbelts.entries[app.id] != nil)
                         }
                     }
 
-                    Text(explanation(for: app))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let entry = seatbelts.entries[app.id] {
+                        ProtectionStanza(name: app.name, options: entry.options, runtime: app.runtime)
+                    } else {
+                        Text(explanation(for: app))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                    GroupBox {
+                    if SeatbeltStore.isEligible(app) {
+                        SeatbeltSection(app: app, saved: seatbelts.entries[app.id]?.options)
+                            .id(app.id)
+                    }
+
+                    Panel {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Exposure").font(.headline)
+                                Spacer()
+                                ExposureBadge(exposure: app.exposure)
+                            }
+                            if app.exposure.reasons.isEmpty {
+                                Text("No signs that it pulls in outside content or acts on instructions from an agent.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                ForEach(app.exposure.push, id: \.self) { reason in
+                                    Label(reason, systemImage: "arrow.up.circle.fill")
+                                        .font(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                ForEach(app.exposure.pull, id: \.self) { reason in
+                                    Label(reason, systemImage: "arrow.down.circle.fill")
+                                        .font(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(4)
+                    }
+
+                    if seatbelts.entries[app.id] != nil {
+                        ActivitySection(app: app)
+                    }
+
+                    Panel {
                         VStack(alignment: .leading, spacing: 6) {
                             fact("Signature", app.signingLabel)
                             fact("Source", app.sourceLabel)
@@ -85,7 +130,7 @@ struct DetailView: View {
 
     private func fact(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(theme.uppercaseLabels ? label.uppercased() : label).font(.caption).foregroundStyle(.secondary)
             Text(value).font(.callout).textSelection(.enabled)
         }
     }
@@ -104,6 +149,411 @@ struct DetailView: View {
             return "Ad hoc signed and not sandboxed. It runs with your full user permissions, limited only by macOS privacy prompts."
         case .signed:
             return "Not sandboxed. It runs with your full user permissions, limited only by macOS privacy prompts (TCC) and System Integrity Protection."
+        }
+    }
+}
+
+/// Add, adjust, launch or remove one unsandboxed app as a Managed Application.
+struct SeatbeltSection: View {
+    let app: AppRecord
+    @EnvironmentObject private var seatbelts: SeatbeltStore
+    @EnvironmentObject private var store: AppStore
+    @State private var options: SeatbeltOptions
+    @State private var problem: String?
+    @State private var isStarting = false
+    @State private var showDetails = false
+    @State private var showManage = false
+    @State private var confirmReplace = false
+
+    init(app: AppRecord, saved: SeatbeltOptions?) {
+        self.app = app
+        _options = State(initialValue: saved ?? SeatbeltOptions())
+    }
+
+    private var entry: SeatbeltEntry? { seatbelts.entries[app.id] }
+    private var hasUnsavedChanges: Bool { entry != nil && entry?.options != options }
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Managed Application").font(.headline)
+
+                HStack {
+                    if entry == nil {
+                        Button("Manage \(app.name)…") { showManage = true }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Button(isStarting ? "Starting…" : "Launch Protected") { launchProtected() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(app.runtime != .notRunning || hasUnsavedChanges || isStarting)
+                        Button("Stop Managing", role: .destructive) {
+                            attempt { try seatbelts.remove(app) }
+                        }
+                    }
+                }
+
+                if let problem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+
+                Divider()
+
+                Text("Options").font(.subheadline.weight(.semibold))
+                Toggle("Block incoming connections", isOn: $options.blockIncoming)
+                    .disabled(options.blockNetwork)
+                Toggle("Block all network access", isOn: $options.blockNetwork)
+                Toggle("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
+
+                if hasUnsavedChanges {
+                    HStack {
+                        Button("Save Changes") { attempt { try seatbelts.apply(app, options: options) } }
+                        Text(app.runtime == .sandboxed ? "Takes effect the next time it is launched." : "Not saved yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Divider()
+
+                DisclosureGroup(entry == nil ? "What managing it would block" : "Exactly what is blocked",
+                                isExpanded: $showDetails) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(SeatbeltProfile.protections(appName: app.name, bundleID: app.bundleID, options: options)) { group in
+                            ProtectionRow(group: group)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+                .font(.subheadline)
+
+                if let entry {
+                    Divider()
+                    Text("Replace App").font(.subheadline.weight(.semibold))
+                    Text(entry.isReplaced
+                         ? "\(app.name) is replaced. Opening it from the Dock, Finder or Spotlight starts it with its seatbelt. The real app is in Managed Applications/Originals."
+                         : "Put the protected launcher where \(app.name) is now, so opening it the usual way starts it with its seatbelt.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if entry.isReplaced {
+                        Button("Restore Original App") { attempt { try seatbelts.restore(app) } }
+                            .disabled(app.runtime != .notRunning)
+                    } else {
+                        Button("Replace App…") { confirmReplace = true }
+                            .disabled(app.runtime != .notRunning)
+                    }
+                }
+
+                if entry != nil {
+                    Divider()
+                    HStack {
+                        Button("Reveal Launcher") {
+                            NSWorkspace.shared.activateFileViewerSelecting([seatbelts.launcherURL(for: app)])
+                        }
+                        Button("Reveal Profile") {
+                            NSWorkspace.shared.activateFileViewerSelecting([seatbelts.profileURL(for: app)])
+                        }
+                    }
+                    .controlSize(.small)
+                    Text("The launcher is a second copy of the app's icon in ~/Applications/Managed Applications. Opening it does the same as Launch Protected.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        }
+        .sheet(isPresented: $showManage) {
+            ManageSheet(app: app, initial: options) { saved in options = saved }
+                .environmentObject(seatbelts)
+        }
+        .confirmationDialog("Replace \(app.name) with its protected launcher?", isPresented: $confirmReplace) {
+            Button("Replace App") { attempt { try seatbelts.replace(app) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Artemis moves the real app to ~/Applications/Managed Applications/Originals and puts a launcher with the same name and icon in its place. macOS may ask for permission to change apps. Files and links that open in \(app.name) can still start it without its seatbelt, and its own updater may complain that it has moved. Restore Original App undoes this.")
+        }
+    }
+
+    private func launchProtected() {
+        problem = nil
+        isStarting = true
+        Task {
+            do {
+                try await seatbelts.launchAndWatch(app)
+                store.scan()
+            } catch {
+                problem = error.localizedDescription
+            }
+            isStarting = false
+        }
+    }
+
+    private func attempt(_ action: () throws -> Void) {
+        do {
+            try action()
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// One expandable group in the list of what a seatbelt blocks.
+struct ProtectionRow: View {
+    let group: SeatbeltProtection
+    @State private var expanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 2) {
+                emphasized(group.rule).font(.caption2).foregroundStyle(.secondary)
+                ForEach(group.items, id: \.self) { item in
+                    Text(item)
+                        .font(group.arePaths ? .system(.caption, design: .monospaced) : .caption)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 2)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: group.symbol)
+                    .foregroundStyle(group.isBlocked ? Color.blue : Color.orange)
+                    .frame(width: 16)
+                Text(group.title).font(.caption.weight(.medium))
+                Spacer(minLength: 4)
+                Text(group.short).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// The short statement at the top of the panel for a managed app.
+struct ProtectionStanza: View {
+    let name: String
+    let options: SeatbeltOptions
+    let runtime: RuntimeState
+    @Environment(\.theme) private var theme
+    private var themed: Bool { theme.isCustom }
+
+    private var heading: (text: String, symbol: String, tint: Color) {
+        switch runtime {
+        case .sandboxed: return ("Protected now", "checkmark.shield.fill", .green)
+        case .notRunning: return ("Protected when launched from Artemis", "shield.lefthalf.filled", .blue)
+        case .unsandboxed: return ("RUNNING UNPROTECTED", "exclamationmark.triangle.fill", .red)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(heading.text, systemImage: heading.symbol)
+                .font(.headline)
+                .foregroundStyle(heading.tint)
+
+            if runtime == .unsandboxed {
+                Text("\(name) was opened outside Artemis. Quit it and use Launch Protected.")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ForEach(SeatbeltProfile.stanza(options: options), id: \.self) { line in
+                (runtime == .unsandboxed ? Text(line).strikethrough().foregroundColor(.secondary) : emphasized(line))
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(heading.tint.opacity(0.10)).opacity(themed ? 0 : 1))
+        .themedPanel(tint: heading.tint.opacity(0.14))
+        .padding(.trailing, themed ? theme.gap : 0)
+        .padding(.bottom, themed ? theme.gap : 0)
+    }
+}
+
+/// Renders every "Can't" in a sentence bold and red, so the restriction is the first thing read.
+func emphasized(_ line: String) -> Text {
+    var result = Text("")
+    var rest = Substring(line)
+    while let range = rest.range(of: "can't", options: .caseInsensitive) {
+        result = result + Text(rest[..<range.lowerBound])
+            + Text(rest[range]).bold().foregroundColor(.red)
+        rest = rest[range.upperBound...]
+    }
+    return result + Text(rest)
+}
+
+/// The confirmation shown when you choose Manage: what will be blocked, the three choices, and how it applies.
+struct ManageSheet: View {
+    let app: AppRecord
+    var initial = SeatbeltOptions()
+    let onManaged: (SeatbeltOptions) -> Void
+
+    @EnvironmentObject private var seatbelts: SeatbeltStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var options = SeatbeltOptions()
+    @State private var problem: String?
+
+    /// The lines that hold whatever the checkboxes say.
+    private var alwaysBlocked: [String] {
+        SeatbeltProfile.stanza(options: SeatbeltOptions(blockIncoming: false, blockNetwork: false, protectUserFolders: false))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
+                    .resizable()
+                    .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Manage \(app.name)?").font(.title2.weight(.semibold))
+                    Text("Artemis will give it a seatbelt. The app itself is not changed.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Always blocked").font(.headline)
+                ForEach(alwaysBlocked, id: \.self) { line in
+                    Label { emphasized(line) } icon: { Image(systemName: "lock.fill") }
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your choices").font(.headline)
+                Toggle("Block incoming connections", isOn: $options.blockIncoming)
+                    .disabled(options.blockNetwork)
+                Toggle("Block all network access", isOn: $options.blockNetwork)
+                Toggle("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
+                Text("You can change these later in the details sidebar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .toggleStyle(.checkbox)
+
+            Label {
+                Text("The seatbelt only applies when you start \(app.name) from Artemis or from its launcher in ~/Applications/Managed Applications. Opened any other way, it runs unprotected.")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+
+            if let problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Manage") {
+                    do {
+                        try seatbelts.apply(app, options: options)
+                        onManaged(options)
+                        dismiss()
+                    } catch {
+                        problem = error.localizedDescription
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+        .onAppear { options = initial }
+    }
+}
+
+/// The activity log for one managed app: recent events, newest first, and export.
+struct ActivitySection: View {
+    let app: AppRecord
+    @EnvironmentObject private var telemetry: TelemetryStore
+    @State private var problem: String?
+
+    private var recent: [TelemetryEvent] { Array(telemetry.events(for: app.id).suffix(40).reversed()) }
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Activity").font(.headline)
+
+                if let trouble = telemetry.streamProblem {
+                    Label(trouble, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if recent.isEmpty {
+                    Text("Nothing recorded yet. Artemis records launches, exits, runs without the seatbelt and blocked attempts while it is open.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(recent) { event in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: event.symbol)
+                                .foregroundStyle(event.kind == .unprotectedRun ? Color.orange
+                                                 : event.kind == .blocked ? Color.red : Color.secondary)
+                                .frame(width: 14)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(event.detail)
+                                    .font(.caption)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(event.date.formatted(date: .abbreviated, time: .standard)
+                                     + (event.category.isEmpty ? "" : " · " + event.category))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                HStack {
+                    Button("Export Log…") { export() }
+                        .disabled(recent.isEmpty)
+                    Button("Reveal Log File") {
+                        NSWorkspace.shared.activateFileViewerSelecting([TelemetryStore.fileURL])
+                    }
+                }
+                .controlSize(.small)
+
+                if let problem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+        }
+    }
+
+    private func export() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "artemis-\(app.name)-activity.jsonl"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try telemetry.export(path: app.id, to: url)
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
         }
     }
 }

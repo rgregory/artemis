@@ -14,7 +14,8 @@ enum AppScanner {
     }
 
     /// `running` maps resolved bundle paths to the pid of the running instance.
-    static func scanAll(running: [String: pid_t]) -> [AppRecord] {
+    /// `replaced` maps a public path that now holds an Artemis launcher to where the real app is.
+    static func scanAll(running: [String: pid_t], replaced: [String: String] = [:]) -> [AppRecord] {
         var seen = Set<String>()
         var bundles: [URL] = []
         for root in roots {
@@ -27,7 +28,7 @@ enum AppScanner {
         results.withUnsafeMutableBufferPointer { buffer in
             let slots = buffer
             DispatchQueue.concurrentPerform(iterations: found.count) { index in
-                slots[index] = makeRecord(found[index], running: running)
+                slots[index] = makeRecord(found[index], running: running, replaced: replaced)
             }
         }
         return results.compactMap { $0 }
@@ -42,6 +43,8 @@ enum AppScanner {
               ) else { return }
 
         for item in items {
+            // Managed Applications launchers are not installed applications.
+            if item.resolvingSymlinksInPath().path == SeatbeltPaths.launchers.path { continue }
             if item.pathExtension.lowercased() == "app" {
                 let resolved = item.resolvingSymlinksInPath()
                 if seen.insert(resolved.path).inserted { bundles.append(resolved) }
@@ -51,13 +54,14 @@ enum AppScanner {
         }
     }
 
-    private static func makeRecord(_ url: URL, running: [String: pid_t]) -> AppRecord? {
+    private static func makeRecord(_ url: URL, running: [String: pid_t], replaced: [String: String]) -> AppRecord? {
         let fm = FileManager.default
 
         // iOS/iPadOS apps on Apple silicon are wrapped: Foo.app/WrappedBundle -> Wrapper/Foo.app
         let wrapped = url.appendingPathComponent("WrappedBundle")
         let isIOSApp = fm.fileExists(atPath: wrapped.path)
-        let codeURL = isIOSApp ? wrapped.resolvingSymlinksInPath() : url
+        var codeURL = isIOSApp ? wrapped.resolvingSymlinksInPath() : url
+        if let real = replaced[url.path] { codeURL = URL(fileURLWithPath: real) }
 
         let plist = Bundle(url: codeURL)?.infoDictionary ?? [:]
         let bundleID = plist["CFBundleIdentifier"] as? String ?? ""
@@ -71,7 +75,7 @@ enum AppScanner {
         let isAppStore = fm.fileExists(atPath: url.appendingPathComponent("Contents/_MASReceipt/receipt").path)
 
         var runtime = RuntimeState.notRunning
-        if let pid = running[url.path] {
+        if let pid = running[url.path] ?? running[codeURL.path] {
             runtime = SandboxInspector.isProcessSandboxed(pid) ? .sandboxed : .unsandboxed
         }
 
@@ -93,7 +97,9 @@ enum AppScanner {
             isAppStore: isAppStore,
             isIOSApp: isIOSApp,
             runtime: runtime,
-            entitlements: info.entitlements
+            entitlements: info.entitlements,
+            exposure: ExposureScanner.assess(bundle: codeURL, plist: plist, bundleID: bundleID,
+                                             name: name, entitlements: info.entitlements)
         )
     }
 }
@@ -103,6 +109,16 @@ final class AppStore: ObservableObject {
     @Published var apps: [AppRecord] = []
     @Published var isScanning = false
     @Published var lastScan: Date?
+    /// Public path -> real path for apps Artemis has replaced with a launcher. Set by the UI.
+    var replaced: [String: String] = [:]
+
+    /// Rescans after a short wait, for when an app has just been started or quit.
+    func scan(after seconds: Double) {
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            scan()
+        }
+    }
 
     func scan() {
         guard !isScanning else { return }
@@ -115,10 +131,11 @@ final class AppStore: ObservableObject {
             }
         }
         let snapshot = running
+        let replacedSnapshot = replaced
 
         Task {
             let result = await Task.detached(priority: .userInitiated) {
-                AppScanner.scanAll(running: snapshot)
+                AppScanner.scanAll(running: snapshot, replaced: replacedSnapshot)
             }.value
             self.apps = result
             self.lastScan = Date()

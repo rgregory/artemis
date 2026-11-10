@@ -35,6 +35,11 @@ struct AppRecord: Identifiable, Hashable, Sendable {
     let isIOSApp: Bool
     let runtime: RuntimeState
     let entitlements: [EntitlementItem]
+    let exposure: Exposure
+
+    /// For sorting: an app with no sandbox ranks by its exposure, a sandboxed one ranks last.
+    var riskScore: Int { isSandboxed ? -1 : exposure.score }
+    var riskLabel: String { exposure.label }
 
     var statusLabel: String { isSandboxed ? "Sandboxed" : "No sandbox" }
 
