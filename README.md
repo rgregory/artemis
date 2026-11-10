@@ -1,11 +1,14 @@
 # Artemis
 
-A small Mac app that shows which of your installed applications run without
-Apple's [App Sandbox](https://developer.apple.com/documentation/security/app-sandbox).
+A Mac app that shows which of your installed applications run without Apple's
+[App Sandbox](https://developer.apple.com/documentation/security/app-sandbox),
+ranks them by how exposed they are, and lets you put a seatbelt on the ones
+you choose.
 
 A sandboxed app can only touch its own files plus whatever it has asked
 permission for. An app without a sandbox can read and change anything you can.
-Artemis tells you which is which.
+Artemis tells you which is which, and for the unsandboxed ones it can limit
+the damage a compromised or misbehaving app could do.
 
 ## Run it
 
@@ -19,44 +22,103 @@ press Run.
 
 ## Using it
 
-The app opens on the list of apps with no sandbox. Click the tiles at the top
-to switch between unsandboxed, sandboxed, and everything. Select an app to see
-who signed it and what permissions it asks for. An orange dot next to a name
-means that app is running unsandboxed right now.
+The app opens on the list of apps with no sandbox, most exposed first. The
+four tiles at the top switch between No sandbox, Managed, Sandboxed and All
+applications.
 
-The toolbar lets you hide the apps that came with macOS, rescan, and export
-the list as a CSV.
+Each row shows:
+
+- Exposure: whether the app pulls in outside content, acts for an agent, or
+  both (see [Exposure](#exposure)).
+- Sandbox: sandboxed, no sandbox, or managed by Artemis.
+- Manage: whether Artemis can manage it. "Can manage", "Managed", "Part of
+  macOS" (it can't), or "Not needed" (already sandboxed).
+- Signature and source: who signed it and where it came from.
+
+An orange dot next to a name means that app is running without a sandbox
+right now.
+
+Double-click an app to open the details sidebar. It is closed by default; the
+Details button in the toolbar also toggles it. Right-click an app for Manage,
+Reveal in Finder and the copy commands.
+
+The toolbar lets you hide the apps that came with macOS, export the list as a
+CSV, and rescan.
 
 ## Managed Applications
 
-Select an app that has no sandbox and choose Manage in the details panel.
-Artemis writes a sandbox (seatbelt) profile for it and creates a launcher in
-`~/Applications/Managed Applications`. Started from that launcher, or from
-the Launch button, a managed application can no longer:
+A managed application is an unsandboxed app that Artemis has written a
+sandbox (seatbelt) profile for and can start inside it. The app itself is not
+modified.
 
-- read or change passwords and keys (`~/.ssh`, cloud credentials, keychain
-  files, browser profiles, 1Password data)
+To manage one, right-click it and choose Manage, or use the Manage button in
+the details sidebar. A sheet shows what will always be blocked, the three
+choices you can make, and how the protection applies. Confirming writes the
+profile and creates a launcher in `~/Applications/Managed Applications`.
+
+Started with its seatbelt, a managed application can't:
+
+- read or change passwords and keys (`~/.ssh`, cloud and command-line
+  credentials, keychain files, other browsers' profiles, 1Password data)
 - read Mail, Messages, Contacts or Calendar data
 - write to login items, launch agents, shell startup files or other apps
 - accept connections from other machines
 
 Three checkboxes adjust this: incoming connections, all network access, and
-Documents, Desktop, Downloads and iCloud. The Managed tile at the top lists
-every app you have added.
+Documents, Desktop, Downloads and iCloud. Everything else works as before.
+The app can still update itself, and a browser or password manager keeps
+access to its own data.
 
-The seatbelt only applies when the app is started through Artemis or its
-launcher. Opening the original app runs it unprotected. Profiles are kept in
-`~/Library/Application Support/Artemis/Profiles`. This relies on
-`sandbox-exec`, which Apple has marked deprecated but still ships.
+Apps that ship with macOS can't be managed, and apps that are already
+sandboxed don't need it.
+
+### The Managed view
+
+The Managed tile shows one card per managed app:
+
+- its state: Protected now, Not running, or Running unprotected
+- what it can't do, and what the current options leave unrestricted
+- a live trace of CPU, disk reads, disk writes and blocked attempts over the
+  last two minutes, while it is running with its seatbelt
+- totals from the log: blocked attempts, runs without the seatbelt, and the
+  last protected launch
+- Launch Protected, Replace App and Options buttons
+
+Right-click a card to reveal its launcher or to delete it from Managed
+Applications. Deleting removes the profile and launcher, not the app.
+
+### When a managed app is running unprotected
+
+The seatbelt only applies when the app is started from Artemis or from its
+launcher. Opened any other way, it runs with your full permissions.
+
+Artemis makes that state obvious: the card gets a red banner and border, its
+protections are struck through, and the Managed tile turns red with a count.
+Quit & Relaunch Protected asks the app to quit and starts it again with its
+seatbelt.
+
+The state is read during a scan, so it updates on rescan or after a launch,
+not the instant you open something from the Dock.
+
+### Where things are kept
+
+- Profiles: `~/Library/Application Support/Artemis/Profiles`
+- Launchers: `~/Applications/Managed Applications`
+- Logs: `~/Library/Application Support/Artemis/Logs`
+
+A managed app can't write to any of these.
+
+This relies on `sandbox-exec`, which Apple has marked deprecated but still
+ships.
 
 ## Replace App
 
-A managed app is only protected when it is started from Artemis or its
-launcher. Replace App, in the details sidebar, closes most of that gap. It
+Replace App closes most of the gap left by launching an app the usual way. It
 moves the real app to `~/Applications/Managed Applications/Originals` and
 puts a launcher with the same name and icon where the app used to be, so the
 Dock, Finder and Spotlight all start it with its seatbelt. Restore Original
-App puts everything back, and so does Stop Managing.
+App puts everything back, and so does removing the app from Managed
+Applications.
 
 What it does not cover: a file or link that opens in the app can still start
 the real app directly. The app's own updater may complain that it has moved.
@@ -78,13 +140,14 @@ The rating comes from the app's declared link types, whether it is built on
 a browser engine, whether it can control other apps, and a built-in list of
 well-known browsers, chat apps, terminals, editors and AI tools. These are
 signals, not proof, and the list is not complete. Hover over the rating, or
-open the details sidebar, to see the reasons.
+open the details sidebar, to see the reasons. The rating is included in the
+CSV export.
 
 ## Logging
 
 While Artemis is open it records what each managed application does:
 
-- when it was added, changed or removed
+- when it was added, changed, replaced, restored or removed
 - each launch with its seatbelt, from Artemis or from its launcher
 - when a launch started from Artemis ended, how long it ran and its exit code
 - each time it was opened without its seatbelt
@@ -96,10 +159,15 @@ events and an Export Log button. Everything is appended to
 `~/Library/Application Support/Artemis/Logs/events.jsonl`, one JSON object
 per line.
 
-Limits: nothing is recorded while Artemis is closed. Blocked attempts are
-read from the macOS system log, which needs an administrator account, and
-macOS drops repeats, so the counts are a minimum. Artemis also keeps at most
-one identical blocked attempt every five seconds.
+Limits:
+
+- Nothing is recorded while Artemis is closed.
+- Blocked attempts are read from the macOS system log, which needs an
+  administrator account. If that fails, the Activity box says so.
+- macOS drops repeated denials, and Artemis keeps at most one identical
+  blocked attempt every five seconds, so the counts are a minimum.
+- The live trace covers the app's main process, not helpers it starts, and
+  has no network channel.
 
 ## Privacy prompts from macOS
 
@@ -138,9 +206,10 @@ again from scratch, run:
 View > Theme switches between five looks. The choice is remembered.
 
 - Standard: the normal macOS appearance.
-- Retro: white panels with dark borders and hard drop shadows.
-- OS 9: Platinum grey with bevelled panels.
-- Copland: a cooler blue-grey with deeper bevels and a teal accent.
+- Retro: white rounded panels with dark borders and hard drop shadows.
+- OS 9: Platinum grey with square, bevelled panels.
+- Copland: a cooler blue-grey with rounded corners, deeper bevels and a teal
+  accent.
 - Things 3: white rounded cards with soft shadows and a blue accent.
 
 ## How it works
@@ -151,7 +220,12 @@ is there and set to true, the app is sandboxed. It is the same thing you would
 see from `codesign -d --entitlements - SomeApp.app`.
 
 For apps that are open, Artemis also asks macOS whether the running process is
-really in a sandbox.
+really in a sandbox. That is how it tells a managed app running with its
+seatbelt from one running without it.
+
+A managed app's profile allows everything by default and then denies a fixed
+list of locations and operations. Its launcher is a small app that starts the
+real one under `sandbox-exec` with that profile.
 
 ## What it doesn't catch
 
@@ -163,5 +237,9 @@ really in a sandbox.
   has been tampered with.
 - It only looks at apps. Command-line tools and background services aren't
   covered.
+- A seatbelt blocks files, not keychain items: an app can still use keychain
+  entries it was already allowed to use.
+- "Block all network access" does not stop DNS lookups, which go through a
+  macOS service.
 
 Artemis is not sandboxed itself. It couldn't inspect other apps if it were.
