@@ -22,6 +22,8 @@ struct ContentView: View {
     ]
     @State private var showInspector = false
     @State private var managing: AppRecord?
+    @AppStorage("sidebarWidth") private var sidebarWidth = 340.0
+    @State private var widthAtDragStart: Double?
     @State private var problem: String?
     @AppStorage(AppTheme.storageKey) private var theme = AppTheme.standard
     private var themed: Bool { theme.isCustom }
@@ -48,6 +50,29 @@ struct ContentView: View {
             }
         }
         return rows.sorted(using: sortOrder)
+    }
+
+    /// The edge between the list and the details sidebar. Drag it to resize the sidebar.
+    private var sidebarHandle: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 9)
+            .frame(maxHeight: .infinity)
+            .overlay(Divider())
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = widthAtDragStart ?? sidebarWidth
+                        widthAtDragStart = start
+                        sidebarWidth = min(620, max(260, start - value.translation.width))
+                    }
+                    .onEnded { _ in widthAtDragStart = nil }
+            )
+            .help("Drag to resize the details sidebar")
     }
 
     /// Apps whose usual place now holds a launcher, mapped to where the real app is.
@@ -77,9 +102,9 @@ struct ContentView: View {
             // The details sidebar is an ordinary pane, not the system inspector: inside the
             // inspector, clicks were landing one row below where they were aimed.
             if showInspector {
-                Divider()
+                sidebarHandle
                 DetailView(app: selectedApp)
-                    .frame(width: 340)
+                    .frame(width: sidebarWidth)
                     .frame(maxHeight: .infinity)
                     .background(theme.paper ?? Color(nsColor: .windowBackgroundColor))
             }
@@ -230,9 +255,6 @@ struct ContentView: View {
 
             TableColumn("Signature", value: \.signingLabel)
                 .width(min: 90, ideal: 130)
-
-            TableColumn("Source", value: \.sourceLabel)
-                .width(min: 80, ideal: 100)
         }
     }
 
@@ -369,7 +391,10 @@ struct ContentView: View {
             Text(filter == .managed
                  ? "What each managed app can reach when launched from Artemis"
                  : "Based on the com.apple.security.app-sandbox entitlement in each app's signature")
+                .truncationMode(.tail)
+                .layoutPriority(-1)
         }
+        .lineLimit(1)
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
@@ -440,9 +465,12 @@ struct StatTile: View {
                     Text("\(count)")
                         .font(.system(.title, design: .rounded, weight: .semibold))
                         .monospacedDigit()
+                        .lineLimit(1)
                     Text(theme.uppercaseLabels ? title.uppercased() : title)
                         .font(themed ? .caption.weight(.medium) : .caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 Spacer(minLength: 0)
             }
