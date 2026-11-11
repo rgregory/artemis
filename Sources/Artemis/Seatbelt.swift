@@ -6,6 +6,12 @@ struct SeatbeltOptions: Codable, Hashable, Sendable {
     var blockIncoming = true
     var blockNetwork = false
     var protectUserFolders = false
+    /// Off by default: denying ~/Library/Keychains makes macOS report "Keychain Not Found"
+    /// in browsers and anything else that saves passwords.
+    var blockKeychain = false
+    /// Only for apps with a sandbox of their own (see `OwnSandbox`): start them with it switched
+    /// off, which is the only way they run under a seatbelt.
+    var disableOwnSandbox = false
 
     /// The chosen options as a short phrase, for the activity log.
     var summary: String {
@@ -13,7 +19,22 @@ struct SeatbeltOptions: Codable, Hashable, Sendable {
         if blockNetwork { parts.append("all network blocked") }
         else if blockIncoming { parts.append("incoming connections blocked") }
         if protectUserFolders { parts.append("Documents, Desktop, Downloads and iCloud blocked") }
+        if blockKeychain { parts.append("Keychain blocked") }
+        if disableOwnSandbox { parts.append("the app's own sandbox turned off") }
         return parts.isEmpty ? "no optional blocks" : parts.joined(separator: "; ")
+    }
+}
+
+extension SeatbeltOptions {
+    /// Missing keys fall back to their defaults, so lists saved by older versions still load.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        blockIncoming = try values.decodeIfPresent(Bool.self, forKey: .blockIncoming) ?? blockIncoming
+        blockNetwork = try values.decodeIfPresent(Bool.self, forKey: .blockNetwork) ?? blockNetwork
+        protectUserFolders = try values.decodeIfPresent(Bool.self, forKey: .protectUserFolders) ?? protectUserFolders
+        blockKeychain = try values.decodeIfPresent(Bool.self, forKey: .blockKeychain) ?? blockKeychain
+        disableOwnSandbox = try values.decodeIfPresent(Bool.self, forKey: .disableOwnSandbox) ?? disableOwnSandbox
     }
 }
 
@@ -75,7 +96,6 @@ enum SeatbeltProfile {
         Guarded(path: ".config/gh"),
         Guarded(path: ".netrc"),
         Guarded(path: ".git-credentials"),
-        Guarded(path: "Library/Keychains"),
         Guarded(path: "Library/Safari"),
         Guarded(path: "Library/Containers/com.apple.Safari"),
         Guarded(path: "Library/Application Support/Google/Chrome", owners: ["com.google.Chrome"]),
@@ -86,6 +106,17 @@ enum SeatbeltProfile {
         Guarded(path: "Library/Application Support/1Password", owners: ["com.1password", "com.agilebits"]),
         Guarded(path: "Library/Group Containers/2BUA8C4S2C.com.1password", owners: ["com.1password", "com.agilebits"]),
     ]
+
+    /// The login keychain's files. Blocking them cuts the app off from the Keychain altogether,
+    /// so it is a per-app choice rather than part of the fixed list.
+    private static let keychain = Guarded(path: "Library/Keychains")
+
+    /// The credential paths that apply to this app with these options.
+    private static func guardedCredentials(bundleID: String, options: SeatbeltOptions) -> [Guarded] {
+        (options.blockKeychain ? [keychain] : []) + credentials.filter { item in
+            bundleID.isEmpty || !item.owners.contains { bundleID.hasPrefix($0) }
+        }
+    }
 
     private static let personal: [Guarded] = [
         Guarded(path: "Library/Mail"),
@@ -124,7 +155,7 @@ enum SeatbeltProfile {
         out.append(block(
             ";; Credentials and other apps' secrets",
             "deny file-read* file-write*",
-            credentials.filter { !owned($0) }.map { inHome($0.path) }
+            guardedCredentials(bundleID: bundleID, options: options).map { inHome($0.path) }
         ))
 
         out.append(block(
@@ -196,7 +227,23 @@ final class SeatbeltStore: ObservableObject {
     /// Where launches, exits and changes are recorded. Set once the app is up.
     weak var telemetry: TelemetryStore?
 
-    init() { load() }
+    init() {
+        load()
+        refreshProfiles()
+    }
+
+    /// Rewrites any saved profile that no longer matches what Artemis would generate now,
+    /// so a rule change reaches apps that are already managed.
+    private func refreshProfiles() {
+        for entry in entries.values {
+            let url = SeatbeltPaths.profiles.appendingPathComponent(
+                Self.fileKey(bundleID: entry.bundleID, name: entry.name) + ".sb")
+            guard let current = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let text = SeatbeltProfile.make(appPath: entry.realPath, name: entry.name,
+                                            bundleID: entry.bundleID, options: entry.options)
+            if text != current { try? text.write(to: url, atomically: true, encoding: .utf8) }
+        }
+    }
 
     static func isEligible(_ app: AppRecord) -> Bool {
         !app.isSandboxed && !app.isIOSApp && !app.url.path.hasPrefix("/System/")
@@ -215,6 +262,7 @@ final class SeatbeltStore: ObservableObject {
         guard Self.isEligible(app) else {
             throw SeatbeltError(message: "\(app.name) already runs in a sandbox, or is part of macOS.")
         }
+        try checkOwnSandbox(app, options: options)
         let executable = try executable(of: app)
         let fm = FileManager.default
         try fm.createDirectory(at: SeatbeltPaths.profiles, withIntermediateDirectories: true)
@@ -226,7 +274,7 @@ final class SeatbeltStore: ObservableObject {
         try text.write(to: profile, atomically: true, encoding: .utf8)
         try validate(profile)
         try writeLauncher(at: launcherURL(for: app), title: "\(app.name) (Managed)", for: app,
-                          profile: profile, executable: executable)
+                          profile: profile, executable: executable, options: options)
 
         let wasManaged = entries[app.id] != nil
         entries[app.id] = SeatbeltEntry(appPath: app.url.path, name: app.name, bundleID: app.bundleID,
@@ -235,6 +283,15 @@ final class SeatbeltStore: ObservableObject {
         telemetry?.record(wasManaged ? .optionsChanged : .managed, path: app.url.path, name: app.name,
                           detail: (wasManaged ? "Options changed: " : "Added to Managed Applications: ")
                               + options.summary + ".")
+    }
+
+    /// An app with its own sandbox can't start a second one inside the seatbelt, so it is only
+    /// managed once the user has agreed to switch its own sandbox off.
+    private func checkOwnSandbox(_ app: AppRecord, options: SeatbeltOptions) throws {
+        guard app.ownSandbox != nil, !options.disableOwnSandbox else { return }
+        throw SeatbeltError(message:
+            "\(app.name) has its own sandbox, and macOS won't run one sandbox inside another. "
+            + "It only works as a managed application with \"Turn off \(app.name)'s own sandbox\" ticked.")
     }
 
     func remove(_ app: AppRecord) throws {
@@ -253,15 +310,21 @@ final class SeatbeltStore: ObservableObject {
     /// apps would just hand off to the running, unprotected instance.
     @discardableResult
     func launch(_ app: AppRecord) throws -> Process {
-        guard entries[app.id] != nil else {
+        guard let entry = entries[app.id] else {
             throw SeatbeltError(message: "Add \(app.name) to Managed Applications first.")
         }
         if isRunning(app) {
             throw SeatbeltError(message: "Quit \(app.name) first, then launch it as a managed application.")
         }
+        try checkOwnSandbox(app, options: entry.options)
+        let own = entry.options.disableOwnSandbox ? app.ownSandbox : nil
         let process = Process()
         process.executableURL = SeatbeltPaths.sandboxExec
         process.arguments = ["-f", profileURL(for: app).path, try executable(of: app).path]
+            + (own?.arguments ?? [])
+        if let extra = own?.environment, !extra.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(extra) { _, new in new }
+        }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = logHandle(for: app) ?? FileHandle.nullDevice
 
@@ -366,7 +429,7 @@ final class SeatbeltStore: ObservableObject {
             try rebuild(app, entry: entry)
             let executable = try executable(of: app)
             try writeLauncher(at: publicURL, title: app.name, for: app,
-                              profile: profileURL(for: app), executable: executable)
+                              profile: profileURL(for: app), executable: executable, options: entry.options)
         } catch {
             // Put everything back the way it was.
             try? fm.removeItem(at: publicURL)
@@ -427,7 +490,7 @@ final class SeatbeltStore: ObservableObject {
                                         bundleID: app.bundleID, options: entry.options)
         try text.write(to: profile, atomically: true, encoding: .utf8)
         try writeLauncher(at: launcherURL(for: app), title: "\(app.name) (Managed)", for: app,
-                          profile: profile, executable: try executable(of: app))
+                          profile: profile, executable: try executable(of: app), options: entry.options)
     }
 
     private func executable(of app: AppRecord) throws -> URL {
@@ -457,7 +520,7 @@ final class SeatbeltStore: ObservableObject {
 
     /// A tiny app whose only job is to start the real one under sandbox-exec, then exit.
     private func writeLauncher(at bundle: URL, title: String, for app: AppRecord,
-                               profile: URL, executable: URL) throws {
+                               profile: URL, executable: URL, options: SeatbeltOptions) throws {
         let fm = FileManager.default
         if fm.fileExists(atPath: bundle.path) {
             // Never overwrite a real app: only replace a launcher Artemis made earlier.
@@ -470,10 +533,16 @@ final class SeatbeltStore: ObservableObject {
         let macOS = bundle.appendingPathComponent("Contents/MacOS")
         try fm.createDirectory(at: macOS, withIntermediateDirectories: true)
 
+        // Switching the app's own sandbox off, when the user has agreed to that.
+        let own = options.disableOwnSandbox ? app.ownSandbox : nil
+        let exports = (own?.environment ?? [:]).sorted { $0.key < $1.key }
+            .map { "export \($0.key)=\(shellQuote($0.value))\n" }.joined()
+        let flags = (own?.arguments ?? []).map { " " + shellQuote($0) }.joined()
+
         let script = """
         #!/bin/sh
         # Generated by Artemis. Starts \(app.name) inside its seatbelt profile.
-        /usr/bin/sandbox-exec -f \(shellQuote(profile.path)) \(shellQuote(executable.path)) "$@" >/dev/null 2>&1 &
+        \(exports)/usr/bin/sandbox-exec -f \(shellQuote(profile.path)) \(shellQuote(executable.path))\(flags) "$@" >/dev/null 2>&1 &
 
         """
         let scriptURL = macOS.appendingPathComponent("launch")
@@ -497,7 +566,11 @@ final class SeatbeltStore: ObservableObject {
     }
 
     private func fileKey(_ app: AppRecord) -> String {
-        let source = app.bundleID.isEmpty ? app.name : app.bundleID
+        Self.fileKey(bundleID: app.bundleID, name: app.name)
+    }
+
+    private static func fileKey(bundleID: String, name: String) -> String {
+        let source = bundleID.isEmpty ? name : bundleID
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
         return String(source.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
     }
@@ -542,7 +615,10 @@ struct SeatbeltProtection: Identifiable, Hashable {
 extension SeatbeltProfile {
     /// The whole protection in three or four short sentences.
     static func stanza(options: SeatbeltOptions) -> [String] {
-        var lines = ["Can't read your passwords, keys, browser data, Mail, Messages, Calendar or Contacts."]
+        var lines = ["Can't read your keys, other browsers' data, Mail, Messages, Calendar or Contacts."]
+        if options.blockKeychain {
+            lines.append("Can't use the Keychain.")
+        }
         if options.protectUserFolders {
             lines.append("Can't open Documents, Desktop, Downloads or iCloud Drive.")
         }
@@ -564,17 +640,24 @@ extension SeatbeltProfile {
         if !options.protectUserFolders {
             open.append("reading and changing files in Documents, Desktop, Downloads and iCloud Drive")
         }
+        if !options.blockKeychain {
+            open.append("using the Keychain, where macOS still guards other apps' items")
+        }
+        if options.disableOwnSandbox {
+            open.append("its own built-in sandbox is turned off, so the seatbelt is the only limit on what it loads")
+        }
         return open
     }
 
     /// Which group of protected things a blocked attempt was aimed at.
     static func category(operation: String, target: String) -> String {
         if operation.hasPrefix("network") { return "Network" }
+        if operation == "forbidden-sandbox-reinit" { return "The app's own sandbox" }
         let home = SeatbeltPaths.home.path + "/"
         func under(_ relatives: [String]) -> Bool {
             relatives.contains { target == home + $0 || target.hasPrefix(home + $0 + "/") }
         }
-        if under(credentials.map(\.path)) { return "Passwords, keys and browser data" }
+        if under(credentials.map(\.path) + [keychain.path]) { return "Passwords, keys and browser data" }
         if under(personal.map(\.path)) { return "Mail, Messages, Calendar, Contacts" }
         if under(userFolders) { return "Your files" }
         if under(persistenceInHome) || persistenceSystem.contains(where: { target.hasPrefix($0) }) {
@@ -599,7 +682,7 @@ extension SeatbeltProfile {
                 short: "No access",
                 rule: "Can't read or change",
                 symbol: "key.fill",
-                items: credentials.filter { !owned($0) }.map { tilde($0.path) }
+                items: guardedCredentials(bundleID: bundleID, options: options).map { tilde($0.path) }
             ),
             SeatbeltProtection(
                 title: "Mail, Messages, Calendar, Contacts",
@@ -671,7 +754,9 @@ extension SeatbeltProfile {
         if !options.protectUserFolders {
             open.append("Documents, Desktop, Downloads and iCloud Drive")
         }
-        open.append("Keychain items the app is already allowed to use")
+        if !options.blockKeychain {
+            open.append("Keychain items the app is already allowed to use")
+        }
         open.append("The rest of your home folder, including other apps' settings and data not listed above")
         open.append("Camera, microphone, screen and location, which macOS privacy prompts still control")
 

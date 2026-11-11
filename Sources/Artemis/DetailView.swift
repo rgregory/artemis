@@ -208,6 +208,11 @@ struct SeatbeltSection: View {
                     .disabled(options.blockNetwork)
                 CheckRow("Block all network access", isOn: $options.blockNetwork)
                 CheckRow("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
+                CheckRow("Block the Keychain (breaks browsers and saved passwords)", isOn: $options.blockKeychain)
+                if app.ownSandbox != nil {
+                    CheckRow("Turn off \(app.name)'s own sandbox (needed for it to run managed)",
+                             isOn: $options.disableOwnSandbox)
+                }
 
                 if hasUnsavedChanges {
                     HStack {
@@ -476,11 +481,28 @@ struct ManageSheet: View {
                     .disabled(options.blockNetwork)
                 CheckRow("Block all network access", isOn: $options.blockNetwork)
                 CheckRow("Block Documents, Desktop, Downloads and iCloud", isOn: $options.protectUserFolders)
+                CheckRow("Block the Keychain (breaks browsers and saved passwords)", isOn: $options.blockKeychain)
                 Text("You can change these later in the details sidebar.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .toggleStyle(.checkbox)
+
+            if app.ownSandbox != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text("\(app.name) has its own sandbox, and macOS won't run one sandbox inside another. Managing it means turning its own sandbox off."
+                             + (app.isBrowser
+                                ? " For a web browser that is a bad trade: its own sandbox shields you from web pages far better than a seatbelt does. Not recommended."
+                                : " Its own sandbox is usually the tighter of the two, so only do this if you want the seatbelt's file rules and logging more."))
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+                    }
+                    CheckRow("Turn off \(app.name)'s own sandbox", isOn: $options.disableOwnSandbox)
+                }
+            }
 
             Label {
                 Text("The seatbelt only applies when you start \(app.name) from Artemis or from its launcher in ~/Applications/Managed Applications. Opened any other way, it runs unprotected.")
@@ -512,6 +534,7 @@ struct ManageSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(app.ownSandbox != nil && !options.disableOwnSandbox)
             }
         }
         .padding(20)

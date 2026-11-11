@@ -52,25 +52,36 @@ sandbox (seatbelt) profile for and can start inside it. The app itself is not
 modified.
 
 To manage one, right-click it and choose Manage, or use the Manage button in
-the details sidebar. A sheet shows what will always be blocked, the three
+the details sidebar. A sheet shows what will always be blocked, the four
 choices you can make, and how the protection applies. Confirming writes the
 profile and creates a launcher in `~/Applications/Managed Applications`.
 
 Started with its seatbelt, a managed application can't:
 
 - read or change passwords and keys (`~/.ssh`, cloud and command-line
-  credentials, keychain files, other browsers' profiles, 1Password data)
+  credentials, other browsers' profiles, 1Password data)
 - read Mail, Messages, Contacts or Calendar data
 - write to login items, launch agents, shell startup files or other apps
 - accept connections from other machines
 
-Three checkboxes adjust this: incoming connections, all network access, and
-Documents, Desktop, Downloads and iCloud. Everything else works as before.
+Four checkboxes adjust this: incoming connections, all network access,
+Documents, Desktop, Downloads and iCloud, and the Keychain. The Keychain is
+left open by default, because blocking `~/Library/Keychains` makes browsers
+and anything else that saves passwords report "Keychain Not Found".
+Everything else works as before.
 The app can still update itself, and a browser or password manager keeps
 access to its own data.
 
 Apps that ship with macOS can't be managed, and apps that are already
 sandboxed don't need it.
+
+Some apps sandbox their own helper processes: Chromium, Chrome, Edge, Brave,
+Firefox, and anything built on Electron or CEF. macOS won't start one sandbox
+inside another (the Activity log shows `forbidden-sandbox-reinit`), so these
+only run managed with their own sandbox switched off. Artemis detects them,
+warns in the Manage sheet, and won't manage one until you tick "Turn off its
+own sandbox". For a web browser this is a bad trade and not recommended: the
+browser's own sandbox contains a hostile page far better than a seatbelt.
 
 ### The Managed view
 

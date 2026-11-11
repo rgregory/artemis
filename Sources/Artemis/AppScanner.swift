@@ -99,7 +99,8 @@ enum AppScanner {
             runtime: runtime,
             entitlements: info.entitlements,
             exposure: ExposureScanner.assess(bundle: codeURL, plist: plist, bundleID: bundleID,
-                                             name: name, entitlements: info.entitlements)
+                                             name: name, entitlements: info.entitlements),
+            ownSandbox: OwnSandbox.detect(bundle: codeURL)
         )
     }
 }
