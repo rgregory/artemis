@@ -82,6 +82,7 @@ enum AppScanner {
         // iOS apps always run in a container, whatever their macOS-visible entitlements say.
         let sandboxed = info.sandboxEntitlement || isIOSApp
 
+        let ownSandbox = OwnSandbox.detect(bundle: codeURL)
         return AppRecord(
             id: url.path,
             url: url,
@@ -100,7 +101,8 @@ enum AppScanner {
             entitlements: info.entitlements,
             exposure: ExposureScanner.assess(bundle: codeURL, plist: plist, bundleID: bundleID,
                                              name: name, entitlements: info.entitlements),
-            ownSandbox: OwnSandbox.detect(bundle: codeURL)
+            ownSandbox: ownSandbox,
+            sandboxLayers: SandboxLayerScanner.sandboxedLayerCount(bundle: codeURL, ownSandbox: ownSandbox)
         )
     }
 }

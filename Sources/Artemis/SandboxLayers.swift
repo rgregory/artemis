@@ -198,6 +198,32 @@ enum SandboxLayerScanner {
         return layers.sorted { ($0.order, $0.name) < ($1.order, $1.name) }
     }
 
+    /// Counted while scanning, for the Sandbox column: sandboxed process kinds in the bundle.
+    static func sandboxedLayerCount(bundle: URL, ownSandbox: OwnSandbox?) -> Int {
+        var count = 0
+        switch ownSandbox {
+        case .chromium?:
+            let helpers = Set(chromiumHelpers(bundle.appendingPathComponent("Contents")).compactMap { name -> String? in
+                if name.hasSuffix("(Renderer).app") { return "renderer" }
+                if name.hasSuffix("(GPU).app") { return "gpu" }
+                if name.hasSuffix("(Plugin).app") { return "plugin" }
+                if name.hasSuffix(" Helper.app") { return "services" }
+                return nil
+            })
+            count = helpers.count
+        case .firefox?:
+            count = 5   // web content, GPU, media decoder, network, utility
+        case nil:
+            break
+        }
+        let fm = FileManager.default
+        let xpc = bundle.appendingPathComponent("Contents/XPCServices")
+        for name in (try? fm.contentsOfDirectory(atPath: xpc.path)) ?? [] where name.hasSuffix(".xpc") {
+            if SandboxInspector.inspect(xpc.appendingPathComponent(name)).sandboxEntitlement { count += 1 }
+        }
+        return count
+    }
+
     /// Chromium keeps its helpers in Contents/Frameworks, either loose or inside
     /// "<Name> Framework.framework/Helpers" (or Versions/*/Helpers).
     private static func chromiumHelpers(_ contents: URL) -> [String] {

@@ -89,6 +89,12 @@ struct AppRecord: Identifiable, Hashable, Sendable {
     let exposure: Exposure
     /// Set when the app sandboxes its own helper processes.
     let ownSandbox: OwnSandbox?
+    /// How many separately sandboxed process kinds the bundle ships (renderers, GPU, network,
+    /// sandboxed XPC services), not counting the main process.
+    let sandboxLayers: Int
+
+    /// No App Sandbox on the main process, but its helpers each run in a sandbox of their own.
+    var isLayered: Bool { !isSandboxed && ownSandbox != nil }
 
     /// A known browser, or a Chromium/Firefox build that registers for web links (Chromium itself,
     /// ungoogled-chromium and other builds whose bundle IDs aren't on the list).
@@ -103,7 +109,11 @@ struct AppRecord: Identifiable, Hashable, Sendable {
 
     /// "Own sandbox" for Chromium and Firefox apps: no App Sandbox on the main process, but
     /// their helpers lock themselves into Seatbelt profiles of their own.
-    var statusLabel: String { isSandboxed ? "Sandboxed" : (ownSandbox != nil ? "Own sandbox" : "No sandbox") }
+    var statusLabel: String {
+        if isSandboxed { return "Sandboxed" }
+        if isLayered { return sandboxLayers > 1 ? "\(sandboxLayers) sandboxes" : "Own sandbox" }
+        return "No sandbox"
+    }
 
     var signingLabel: String {
         switch signing {

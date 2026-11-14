@@ -30,7 +30,7 @@ Each row shows:
 
 - Exposure: whether the app pulls in outside content, acts for an agent, or
   both (see [Exposure](#exposure)).
-- Sandbox: sandboxed, no sandbox, own sandbox (see [Sandbox layers](#sandbox-layers)),
+- Sandbox: sandboxed, no sandbox, "N sandboxes" (see [Sandbox layers](#sandbox-layers)),
   or managed by Artemis.
 - Manage: whether Artemis can manage it. "Can manage", "Managed", "Part of
   macOS" (it can't), or "Not needed" (already sandboxed).
@@ -95,7 +95,8 @@ hostile page has to escape the renderer and then exploit a second, more
 trusted process before it reaches your files. The main process is the one
 left with your full permissions.
 
-Artemis badges these apps "Own sandbox" and shows a Sandbox layers panel in
+Artemis badges these apps in indigo with the number of sandboxed process
+kinds it found, for example "4 sandboxes" for Chrome, and shows a Sandbox layers panel in
 the details sidebar. While the app is running, the panel asks the kernel about
 every process inside the bundle, groups them by role (from Chromium's
 `--type=` and `--utility-sub-type=` arguments, or Firefox's process type) and

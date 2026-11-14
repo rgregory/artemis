@@ -527,22 +527,24 @@ struct StatusBadge: View {
     var isManaged = false
 
     var body: some View {
+        let layered = app.isLayered && !isManaged
         let tint: Color = isManaged ? .blue
             : app.isSandboxed ? .green
-            : app.ownSandbox != nil ? .yellow
+            : layered ? .indigo
             : (app.signing == .unsigned ? .red : .orange)
         let symbol = isManaged ? "shield.lefthalf.filled"
             : app.isSandboxed ? "lock.shield.fill"
-            : app.ownSandbox != nil ? "square.stack.3d.up.fill" : "lock.open.fill"
+            : layered ? "square.stack.3d.up.fill" : "lock.open.fill"
         Label(isManaged ? "Managed" : app.statusLabel, systemImage: symbol)
-            .help(app.ownSandbox != nil && !app.isSandboxed && !isManaged
-                  ? "No App Sandbox on the main process, but its helpers sandbox themselves. See Sandbox layers in the details."
+            .help(layered
+                  ? "The main process has no App Sandbox, but \(app.sandboxLayers) kinds of helper process (web pages, GPU, network…) each run in a sandbox of their own. See Sandbox layers in the details."
                   : "")
-            .font(.caption.weight(.medium))
+            .font(.caption.weight(layered ? .semibold : .medium))
             .foregroundStyle(tint)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(Capsule().fill(tint.opacity(0.14)))
+            .background(Capsule().fill(tint.opacity(layered ? 0.18 : 0.14)))
+            .overlay(Capsule().strokeBorder(tint.opacity(layered ? 0.6 : 0), lineWidth: 1))
     }
 }
 
