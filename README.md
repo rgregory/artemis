@@ -30,7 +30,8 @@ Each row shows:
 
 - Exposure: whether the app pulls in outside content, acts for an agent, or
   both (see [Exposure](#exposure)).
-- Sandbox: sandboxed, no sandbox, or managed by Artemis.
+- Sandbox: sandboxed, no sandbox, own sandbox (see [Sandbox layers](#sandbox-layers)),
+  or managed by Artemis.
 - Manage: whether Artemis can manage it. "Can manage", "Managed", "Part of
   macOS" (it can't), or "Not needed" (already sandboxed).
 - Signature and source: who signed it and where it came from.
@@ -82,6 +83,29 @@ only run managed with their own sandbox switched off. Artemis detects them,
 warns in the Manage sheet, and won't manage one until you tick "Turn off its
 own sandbox". For a web browser this is a bad trade and not recommended: the
 browser's own sandbox contains a hostile page far better than a seatbelt.
+
+### Sandbox layers
+
+"No sandbox" describes one process: the app's main executable doesn't opt in
+to App Sandbox. Chromium-based apps (Chrome, Edge, Brave, Arc, Electron and
+CEF apps) and Firefox are built from many processes, and lock each helper into
+its own Seatbelt profile as it starts. Renderers that run web pages get the
+strictest profile; the GPU, network and utility services get their own. A
+hostile page has to escape the renderer and then exploit a second, more
+trusted process before it reaches your files. The main process is the one
+left with your full permissions.
+
+Artemis badges these apps "Own sandbox" and shows a Sandbox layers panel in
+the details sidebar. While the app is running, the panel asks the kernel about
+every process inside the bundle, groups them by role (from Chromium's
+`--type=` and `--utility-sub-type=` arguments, or Firefox's process type) and
+shows how many of each are sandboxed. It warns when renderers or web content
+run unsandboxed, which means the app was started with `--no-sandbox` or its
+developer turned sandboxing off (common in older Electron apps). When the app
+isn't running, the panel reads the helpers from the bundle instead.
+
+The panel also appears for other apps that ship sandboxed XPC services or
+helpers, such as Sparkle's downloader.
 
 ### The Managed view
 

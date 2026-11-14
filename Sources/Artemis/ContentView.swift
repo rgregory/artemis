@@ -528,10 +528,16 @@ struct StatusBadge: View {
 
     var body: some View {
         let tint: Color = isManaged ? .blue
-            : app.isSandboxed ? .green : (app.signing == .unsigned ? .red : .orange)
+            : app.isSandboxed ? .green
+            : app.ownSandbox != nil ? .yellow
+            : (app.signing == .unsigned ? .red : .orange)
         let symbol = isManaged ? "shield.lefthalf.filled"
-            : app.isSandboxed ? "lock.shield.fill" : "lock.open.fill"
+            : app.isSandboxed ? "lock.shield.fill"
+            : app.ownSandbox != nil ? "square.stack.3d.up.fill" : "lock.open.fill"
         Label(isManaged ? "Managed" : app.statusLabel, systemImage: symbol)
+            .help(app.ownSandbox != nil && !app.isSandboxed && !isManaged
+                  ? "No App Sandbox on the main process, but its helpers sandbox themselves. See Sandbox layers in the details."
+                  : "")
             .font(.caption.weight(.medium))
             .foregroundStyle(tint)
             .padding(.horizontal, 7)

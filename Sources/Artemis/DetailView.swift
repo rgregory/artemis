@@ -33,6 +33,9 @@ struct DetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    SandboxLayersPanel(app: app)
+                        .id(app.id)
+
                     if SeatbeltStore.isEligible(app) {
                         SeatbeltSection(app: app, saved: seatbelts.entries[app.id]?.options)
                             .id(app.id)
@@ -650,5 +653,138 @@ struct CheckRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
+/// The sandboxes inside one app: Chromium and Firefox put web pages, the GPU and networking in
+/// separate processes, each in its own Seatbelt profile, so "No sandbox" only describes the
+/// outermost process. Live when the app is running, otherwise read from the bundle.
+struct SandboxLayersPanel: View {
+    let app: AppRecord
+    @EnvironmentObject private var store: AppStore
+    @State private var report: SandboxLayerReport?
+    @State private var isChecking = false
+
+    var body: some View {
+        Group {
+            if let report, report.isLayered || app.ownSandbox != nil {
+                Panel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Sandbox layers").font(.headline)
+                            Spacer()
+                            if report.isLive {
+                                Text("\(report.sandboxedRunning) of \(report.running) processes sandboxed")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(report.sandboxedRunning == 0 ? Color.orange : Color.secondary)
+                            }
+                        }
+
+                        Text(insight(report))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        ForEach(report.layers) { layer in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: symbol(layer))
+                                    .foregroundStyle(tint(layer))
+                                    .frame(width: 16)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    HStack {
+                                        Text(layer.name).font(.callout.weight(.medium))
+                                        Spacer()
+                                        Text(layer.stateLabel).font(.caption).foregroundStyle(tint(layer))
+                                    }
+                                    Text(layer.role).font(.caption).foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+
+                        if let warning = warning(report) {
+                            Label(warning, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        HStack {
+                            Text(report.isLive ? "Checked against the running processes."
+                                 : "Read from the app's bundle. Start \(app.name) to check the running processes.")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            Button(isChecking ? "Checking…" : "Check Again") { refresh() }
+                                .controlSize(.small)
+                                .disabled(isChecking)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
+                }
+            }
+        }
+        .task(id: app.runtimeLabel) { refresh() }
+    }
+
+    private func refresh() {
+        let app = self.app
+        let code = store.replaced[app.url.path].map { URL(fileURLWithPath: $0) }
+        isChecking = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                SandboxLayerScanner.report(for: app, codeURL: code)
+            }.value
+            report = result
+            isChecking = false
+        }
+    }
+
+    private func insight(_ report: SandboxLayerReport) -> String {
+        let name = app.name
+        let noStacking = " It's also why a seatbelt can't go on top: macOS won't start a sandbox inside another, so managing \(name) means giving these layers up."
+        switch app.ownSandbox {
+        case .chromium? where app.isBrowser:
+            return "Listed as having no sandbox because \(name)'s main process doesn't opt in to App Sandbox. That's only the outer shell. \(name) splits into separate processes and locks each into its own Seatbelt profile as it starts. The renderers that run web pages get the strictest one: no files, no network, no other apps. To reach your files, a hostile page has to break out of a renderer and then find a second bug in a more trusted process. The weak spot is the main process, which runs with your full permissions." + noStacking
+        case .chromium?:
+            return "\(name) is built on Chromium, which can lock its renderer and GPU processes into their own sandboxes. Electron turns renderer sandboxing on by default, but a developer can switch it off, and the app's own code runs in the main process with your full permissions. The renderers only protect you if they're actually sandboxed: start \(name) to check." + noStacking
+        case .firefox?:
+            return "Listed as having no sandbox because \(name)'s main process doesn't opt in to App Sandbox. It still runs web pages, media decoding and networking in separate processes, each locked into its own Seatbelt profile, with web content getting the strictest. A hostile page has to escape that and then attack the main process, which runs with your full permissions." + noStacking
+        case nil where app.isSandboxed:
+            return "\(name) and its helpers each have their own sandbox. A helper that's attacked is held to its own profile, not the app's."
+        case nil:
+            return "\(name) itself isn't sandboxed, but some of its helpers are. That limits what an attack on a helper can do. The main app still runs with your full permissions."
+        }
+    }
+
+    /// Something in the live view that undercuts the layers: a renderer or web content
+    /// process running outside a sandbox.
+    private func warning(_ report: SandboxLayerReport) -> String? {
+        guard report.isLive else { return nil }
+        let exposed = report.layers.filter { layer in
+            guard layer.order > 0, layer.order < 8, case let .live(running, sandboxed) = layer.state else { return false }
+            return app.ownSandbox != nil && sandboxed < running
+        }
+        guard !exposed.isEmpty else { return nil }
+        let names = exposed.map { $0.name.lowercased() }.joined(separator: ", ")
+        return "Some \(names) processes are running without a sandbox. \(app.name) was started with its own sandbox turned off (for example with --no-sandbox), or its developer disabled it."
+    }
+
+    private func symbol(_ layer: SandboxLayer) -> String {
+        switch layer.isSandboxed {
+        case true?: return layer.order == 0 ? "lock.shield.fill" : "lock.fill"
+        case false?: return "lock.open.fill"
+        case nil: return "lock.trianglebadge.exclamationmark.fill"
+        }
+    }
+
+    private func tint(_ layer: SandboxLayer) -> Color {
+        switch layer.isSandboxed {
+        case true?: return .green
+        case false?: return .orange
+        case nil: return .yellow
+        }
     }
 }

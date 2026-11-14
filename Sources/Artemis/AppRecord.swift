@@ -96,7 +96,9 @@ struct AppRecord: Identifiable, Hashable, Sendable {
     var riskScore: Int { isSandboxed ? -1 : exposure.score }
     var riskLabel: String { exposure.label }
 
-    var statusLabel: String { isSandboxed ? "Sandboxed" : "No sandbox" }
+    /// "Own sandbox" for Chromium and Firefox apps: no App Sandbox on the main process, but
+    /// their helpers lock themselves into Seatbelt profiles of their own.
+    var statusLabel: String { isSandboxed ? "Sandboxed" : (ownSandbox != nil ? "Own sandbox" : "No sandbox") }
 
     var signingLabel: String {
         switch signing {
