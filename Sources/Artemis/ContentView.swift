@@ -13,6 +13,8 @@ struct ContentView: View {
 
     @State private var filter: Filter = .unprotected
     @State private var showApple = true
+    /// Only apps that are running right now. Tiles and the list both follow it.
+    @AppStorage("activeOnly") private var activeOnly = false
     @State private var search = ""
     @State private var selection: AppRecord.ID?
     /// Riskiest first: apps that pull from the world or take orders from agents rise to the top.
@@ -28,9 +30,9 @@ struct ContentView: View {
     @AppStorage(AppTheme.storageKey) private var theme = AppTheme.standard
     private var themed: Bool { theme.isCustom }
 
-    /// Everything in scope (Apple toggle applied), before the sandbox filter and search.
+    /// Everything in scope (Apple and Active toggles applied), before the sandbox filter and search.
     private var scoped: [AppRecord] {
-        showApple ? store.apps : store.apps.filter { !$0.isApple }
+        store.apps.filter { (showApple || !$0.isApple) && (!activeOnly || $0.runtime != .notRunning) }
     }
 
     private var visible: [AppRecord] {
@@ -112,6 +114,12 @@ struct ContentView: View {
         .searchable(text: $search, prompt: "Name, bundle ID, or team")
         .toolbar {
             ToolbarItemGroup {
+                Toggle(isOn: $activeOnly.animation(.smooth)) {
+                    Label("Active", systemImage: "bolt.fill")
+                }
+                .help("Show only apps that are running right now")
+                .onChange(of: activeOnly) { _, on in if on { store.scan() } }
+
                 Toggle(isOn: $showApple) {
                     Label("Apple Apps", systemImage: "apple.logo")
                 }
@@ -140,6 +148,13 @@ struct ContentView: View {
                 }
                 .help("Show or hide details")
             }
+        }
+        // Keep the Active view current as apps start and quit.
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)) { _ in
+            if activeOnly { store.scan(after: 1) }
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in
+            if activeOnly { store.scan(after: 1) }
         }
         .task {
             seatbelts.telemetry = telemetry

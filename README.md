@@ -47,7 +47,9 @@ Double-click an app to open the details sidebar. It is closed by default; the
 Details button in the toolbar also toggles it. Right-click an app for Manage,
 Reveal in Finder and the copy commands.
 
-The toolbar lets you hide the apps that came with macOS, export the list as a
+The toolbar's Active toggle (lightning bolt) narrows the tiles and the list to
+apps that are running right now, and keeps up as apps start and quit. It also
+lets you hide the apps that came with macOS, export the list as a
 CSV, and rescan.
 
 ## Managed Applications
