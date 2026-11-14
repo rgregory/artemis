@@ -239,7 +239,7 @@ again from scratch, run:
 
 ## Themes
 
-View > Theme switches between five looks. The choice is remembered.
+View > Theme switches between six looks. The choice is remembered.
 
 - Standard: the normal macOS appearance.
 - Retro: white rounded panels with dark borders and hard drop shadows.
@@ -247,6 +247,10 @@ View > Theme switches between five looks. The choice is remembered.
 - Copland: a cooler blue-grey with rounded corners, deeper bevels and a teal
   accent.
 - Things 3: white rounded cards with soft shadows and a blue accent.
+- Ink: dark. Blue-black window, slate panels and a cyan accent.
+
+Status colours (red, orange, green, indigo, blue) are deeper than the system
+ones in light themes and lighter in dark ones, so badges stay readable.
 
 ## How it works
 

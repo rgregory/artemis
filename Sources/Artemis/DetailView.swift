@@ -198,7 +198,7 @@ struct SeatbeltSection: View {
                 if let problem {
                     Text(problem)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.red)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -324,7 +324,7 @@ struct ProtectionRow: View {
         Disclosure(isExpanded: $expanded) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: group.symbol)
-                    .foregroundStyle(group.isBlocked ? Color.blue : Color.orange)
+                    .foregroundStyle(group.isBlocked ? Palette.blue : Palette.orange)
                     .frame(width: 16)
                 Text(group.title).font(.caption.weight(.medium))
                 Spacer(minLength: 4)
@@ -392,9 +392,9 @@ struct ProtectionStanza: View {
 
     private var heading: (text: String, symbol: String, tint: Color) {
         switch runtime {
-        case .sandboxed: return ("Protected now", "checkmark.shield.fill", .green)
-        case .notRunning: return ("Protected when launched from Artemis", "shield.lefthalf.filled", .blue)
-        case .unsandboxed: return ("RUNNING UNPROTECTED", "exclamationmark.triangle.fill", .red)
+        case .sandboxed: return ("Protected now", "checkmark.shield.fill", Palette.green)
+        case .notRunning: return ("Protected when launched from Artemis", "shield.lefthalf.filled", Palette.blue)
+        case .unsandboxed: return ("RUNNING UNPROTECTED", "exclamationmark.triangle.fill", Palette.red)
         }
     }
 
@@ -432,7 +432,7 @@ func emphasized(_ line: String) -> Text {
     var rest = Substring(line)
     while let range = rest.range(of: "can't", options: .caseInsensitive) {
         result = result + Text(rest[..<range.lowerBound])
-            + Text(rest[range]).bold().foregroundColor(.red)
+            + Text(rest[range]).bold().foregroundColor(Palette.red)
         rest = rest[range.upperBound...]
     }
     return result + Text(rest)
@@ -501,7 +501,7 @@ struct ManageSheet: View {
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
                     } icon: {
-                        Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+                        Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(Palette.red)
                     }
                     CheckRow("Turn off \(app.name)'s own sandbox", isOn: $options.disableOwnSandbox)
                 }
@@ -512,13 +512,13 @@ struct ManageSheet: View {
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.orange)
             }
 
             if let problem {
                 Text(problem)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
@@ -562,7 +562,7 @@ struct ActivitySection: View {
                 if let trouble = telemetry.streamProblem {
                     Label(trouble, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -575,8 +575,8 @@ struct ActivitySection: View {
                     ForEach(recent) { event in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: event.symbol)
-                                .foregroundStyle(event.kind == .unprotectedRun ? Color.orange
-                                                 : event.kind == .blocked ? Color.red : Color.secondary)
+                                .foregroundStyle(event.kind == .unprotectedRun ? Palette.orange
+                                                 : event.kind == .blocked ? Palette.red : Color.secondary)
                                 .frame(width: 14)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(event.detail)
@@ -602,7 +602,7 @@ struct ActivitySection: View {
                 .controlSize(.small)
 
                 if let problem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(.caption).foregroundStyle(Palette.red)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -676,7 +676,7 @@ struct SandboxLayersPanel: View {
                             if report.isLive {
                                 Text("\(report.sandboxedRunning) of \(report.running) processes sandboxed")
                                     .font(.caption.weight(.medium))
-                                    .foregroundStyle(report.sandboxedRunning == 0 ? Color.orange : Color.secondary)
+                                    .foregroundStyle(report.sandboxedRunning == 0 ? Palette.orange : Color.secondary)
                             }
                         }
 
@@ -705,7 +705,7 @@ struct SandboxLayersPanel: View {
                         if let warning = warning(report) {
                             Label(warning, systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Palette.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
@@ -782,9 +782,9 @@ struct SandboxLayersPanel: View {
 
     private func tint(_ layer: SandboxLayer) -> Color {
         switch layer.isSandboxed {
-        case true?: return .green
-        case false?: return .orange
-        case nil: return .yellow
+        case true?: return Palette.green
+        case false?: return Palette.orange
+        case nil: return Palette.yellow
         }
     }
 }

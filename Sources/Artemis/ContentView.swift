@@ -182,13 +182,13 @@ struct ContentView: View {
         return VStack(spacing: 10) {
             HStack(spacing: 10 + theme.gap * 2) {
                 StatTile(title: "No sandbox", count: open, symbol: "lock.open.fill",
-                         tint: .orange, isActive: filter == .unprotected) { filter = .unprotected }
+                         tint: Palette.orange, isActive: filter == .unprotected) { filter = .unprotected }
                 StatTile(title: exposedNow == 0 ? "Managed" : "Managed · \(exposedNow) unprotected",
                          count: managed,
                          symbol: exposedNow == 0 ? "shield.lefthalf.filled" : "exclamationmark.shield.fill",
-                         tint: exposedNow == 0 ? .blue : .red, isActive: filter == .managed) { filter = .managed }
+                         tint: exposedNow == 0 ? Palette.blue : Palette.red, isActive: filter == .managed) { filter = .managed }
                 StatTile(title: "Sandboxed", count: sandboxed, symbol: "lock.shield.fill",
-                         tint: .green, isActive: filter == .sandboxed) { filter = .sandboxed }
+                         tint: Palette.green, isActive: filter == .sandboxed) { filter = .sandboxed }
                 StatTile(title: "All applications", count: total, symbol: "square.grid.2x2.fill",
                          tint: .accentColor, isActive: filter == .all) { filter = .all }
             }
@@ -218,12 +218,12 @@ struct ContentView: View {
                         .frame(width: 20, height: 20)
                     Text(app.name)
                     if app.runtime == .unsandboxed {
-                        Circle().fill(.orange).frame(width: 6, height: 6)
+                        Circle().fill(Palette.orange).frame(width: 6, height: 6)
                             .help(seatbelts.entries[app.id] != nil
                                   ? "Running right now without its seatbelt"
                                   : "Running right now without a sandbox")
                     } else if app.runtime == .sandboxed && seatbelts.entries[app.id] != nil {
-                        Circle().fill(.blue).frame(width: 6, height: 6)
+                        Circle().fill(Palette.blue).frame(width: 6, height: 6)
                             .help("Running right now with its seatbelt")
                     }
                 }
@@ -242,7 +242,7 @@ struct ContentView: View {
 
             TableColumn("Manage") { app in
                 if seatbelts.entries[app.id] != nil {
-                    Label("Managed", systemImage: "shield.lefthalf.filled").foregroundStyle(.blue)
+                    Label("Managed", systemImage: "shield.lefthalf.filled").foregroundStyle(Palette.blue)
                 } else if SeatbeltStore.isEligible(app) {
                     Label("Can manage", systemImage: "plus.circle")
                 } else if app.isSandboxed {
@@ -506,8 +506,8 @@ struct CoverageBar: View {
         HStack(spacing: 10) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.orange.opacity(0.55))
-                    Capsule().fill(Color.green)
+                    Capsule().fill(Palette.orange.opacity(0.55))
+                    Capsule().fill(Palette.green)
                         .frame(width: max(0, geo.size.width * fraction))
                 }
             }
@@ -528,10 +528,10 @@ struct StatusBadge: View {
 
     var body: some View {
         let layered = app.isLayered && !isManaged
-        let tint: Color = isManaged ? .blue
-            : app.isSandboxed ? .green
-            : layered ? .indigo
-            : (app.signing == .unsigned ? .red : .orange)
+        let tint: Color = isManaged ? Palette.blue
+            : app.isSandboxed ? Palette.green
+            : layered ? Palette.indigo
+            : (app.signing == .unsigned ? Palette.red : Palette.orange)
         let symbol = isManaged ? "shield.lefthalf.filled"
             : app.isSandboxed ? "lock.shield.fill"
             : layered ? "square.stack.3d.up.fill" : "lock.open.fill"
@@ -539,12 +539,12 @@ struct StatusBadge: View {
             .help(layered
                   ? "The main process has no App Sandbox, but \(app.sandboxLayers) kinds of helper process (web pages, GPU, network…) each run in a sandbox of their own. See Sandbox layers in the details."
                   : "")
-            .font(.caption.weight(layered ? .semibold : .medium))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(tint)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(Capsule().fill(tint.opacity(layered ? 0.18 : 0.14)))
-            .overlay(Capsule().strokeBorder(tint.opacity(layered ? 0.6 : 0), lineWidth: 1))
+            .background(Capsule().fill(tint.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(tint.opacity(layered ? 0.75 : 0.35), lineWidth: 1))
     }
 }
 
@@ -567,9 +567,9 @@ struct ManagedCard: View {
 
     private var state: (text: String, symbol: String, tint: Color) {
         switch app.runtime {
-        case .sandboxed: return ("Protected now", "checkmark.shield.fill", .green)
-        case .unsandboxed: return ("Running unprotected", "exclamationmark.shield.fill", .red)
-        case .notRunning: return ("Not running", "shield.lefthalf.filled", .blue)
+        case .sandboxed: return ("Protected now", "checkmark.shield.fill", Palette.green)
+        case .unsandboxed: return ("Running unprotected", "exclamationmark.shield.fill", Palette.red)
+        case .notRunning: return ("Not running", "shield.lefthalf.filled", Palette.blue)
         }
     }
 
@@ -592,7 +592,7 @@ struct ManagedCard: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red)
+                .background(Palette.red)
             }
 
             HStack(spacing: 10) {
@@ -626,7 +626,7 @@ struct ManagedCard: View {
                 if !open.isEmpty && !isUnprotected {
                     Label("Not restricted: " + open.joined(separator: "; ") + ".", systemImage: "lock.open.fill")
                         .font(.callout)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -635,7 +635,7 @@ struct ManagedCard: View {
                 Label("Replaces the original: opening it the usual way starts it protected.",
                       systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Palette.blue)
             }
 
             VitalsStrip(samples: telemetry.traces[app.id] ?? [], isLive: app.runtime == .sandboxed)
@@ -645,7 +645,7 @@ struct ManagedCard: View {
             if let problem {
                 Text(problem)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
@@ -666,7 +666,7 @@ struct ManagedCard: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(isUnprotected ? .red : nil)
+                .tint(isUnprotected ? Palette.red : nil)
                 .disabled(app.runtime == .sandboxed || isStarting)
 
                 if seatbelts.entries[app.id]?.isReplaced == true {
@@ -707,7 +707,7 @@ struct ManagedCard: View {
         .themedPanel(tint: isSelected ? Color.accentColor.opacity(0.12) : nil, isSelection: true)
         .overlay(
             RoundedRectangle(cornerRadius: themed ? theme.panel.corner : 12, style: .continuous)
-                .strokeBorder(Color.red, lineWidth: isUnprotected ? 4 : 0)
+                .strokeBorder(Palette.red, lineWidth: isUnprotected ? 4 : 0)
                 .allowsHitTesting(false)
         )
         .contentShape(Rectangle())
@@ -732,7 +732,7 @@ struct ActivitySummary: View {
             if activity.unprotectedRuns > 0 {
                 Label("Opened without its seatbelt \(activity.unprotectedRuns) \(activity.unprotectedRuns == 1 ? "time" : "times").",
                       systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.orange)
             }
             if let last = activity.lastProtectedLaunch {
                 Label("Last protected launch \(last.formatted(date: .abbreviated, time: .shortened)). \(activity.protectedLaunches) in total.",
@@ -754,11 +754,11 @@ struct ExposureBadge: View {
     var body: some View {
         let both = !exposure.pull.isEmpty && !exposure.push.isEmpty
         let none = exposure.pull.isEmpty && exposure.push.isEmpty
-        let tint: Color = both ? .red : (none ? .secondary : .orange)
+        let tint: Color = both ? Palette.red : (none ? .secondary : Palette.orange)
         let symbol = both ? "arrow.up.arrow.down.circle.fill"
             : exposure.push.isEmpty ? (none ? "minus.circle" : "arrow.down.circle.fill") : "arrow.up.circle.fill"
         Label(exposure.label, systemImage: symbol)
-            .font(.caption.weight(.medium))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(tint)
             .help(none ? "No signs that it pulls in outside content or acts for an agent"
                   : exposure.reasons.joined(separator: "\n"))
@@ -780,10 +780,10 @@ struct VitalsStrip: View {
     }
 
     private let channels = [
-        Channel(name: "CPU", color: .green, value: \.cpu, floor: 25),
-        Channel(name: "READ", color: .blue, value: \.read, floor: 256_000),
+        Channel(name: "CPU", color: Palette.green, value: \.cpu, floor: 25),
+        Channel(name: "READ", color: Palette.blue, value: \.read, floor: 256_000),
         Channel(name: "WRITE", color: .purple, value: \.write, floor: 256_000),
-        Channel(name: "BLOCK", color: .red, value: \.blocked, floor: 1),
+        Channel(name: "BLOCK", color: Palette.red, value: \.blocked, floor: 1),
     ]
 
     private var caption: String {

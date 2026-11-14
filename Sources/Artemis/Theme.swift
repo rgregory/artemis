@@ -1,8 +1,26 @@
+import AppKit
 import SwiftUI
+
+/// Status colours, deeper than the system ones so badge text stays readable on its pale
+/// capsule in light themes, and lighter in dark ones (Ink, or the system dark mode).
+enum Palette {
+    private static func adaptive(_ light: (Double, Double, Double), _ dark: (Double, Double, Double)) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let c = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
+        })
+    }
+    static let red = adaptive((0.70, 0.11, 0.09), (1.00, 0.46, 0.42))
+    static let orange = adaptive((0.70, 0.30, 0.00), (1.00, 0.62, 0.26))
+    static let yellow = adaptive((0.55, 0.42, 0.00), (0.98, 0.82, 0.30))
+    static let green = adaptive((0.07, 0.46, 0.18), (0.38, 0.86, 0.50))
+    static let blue = adaptive((0.04, 0.33, 0.78), (0.45, 0.68, 1.00))
+    static let indigo = adaptive((0.29, 0.20, 0.74), (0.66, 0.62, 1.00))
+}
 
 /// The looks Artemis can wear, chosen under View > Theme.
 enum AppTheme: String, CaseIterable, Identifiable {
-    case standard, retro, os9, copland, things
+    case standard, retro, os9, copland, things, ink
 
     static let storageKey = "theme"
     var id: String { rawValue }
@@ -14,10 +32,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .os9: return "OS 9"
         case .copland: return "Copland"
         case .things: return "Things 3"
+        case .ink: return "Ink"
         }
     }
 
     var isCustom: Bool { self != .standard }
+    var isDark: Bool { self == .ink }
 
     /// Window background. Nil leaves the system's.
     var paper: Color? {
@@ -27,6 +47,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .os9: return Color(white: 0.867)                               // Platinum grey
         case .copland: return Color(red: 0.78, green: 0.80, blue: 0.84)     // cooler, bluer grey
         case .things: return Color(red: 0.965, green: 0.968, blue: 0.975)
+        case .ink: return Color(red: 0.067, green: 0.075, blue: 0.094)      // blue-black
         }
     }
 
@@ -36,6 +57,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .os9: return Color(red: 0.40, green: 0.40, blue: 0.80)         // classic lavender highlight
         case .copland: return Color(red: 0.20, green: 0.45, blue: 0.55)     // teal
         case .things: return Color(red: 0.11, green: 0.49, blue: 0.98)
+        case .ink: return Color(red: 0.36, green: 0.74, blue: 0.88)         // cold cyan
         }
     }
 
@@ -58,6 +80,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .things:
             return PanelLook(fill: .white, corner: 10, border: Color(white: 0.90),
                              borderWidth: 1, softShadow: 5)
+        case .ink:
+            return PanelLook(fill: Color(red: 0.11, green: 0.12, blue: 0.145), corner: 6,
+                             border: Color(red: 0.25, green: 0.28, blue: 0.33), borderWidth: 1,
+                             selection: Color(red: 0.13, green: 0.25, blue: 0.34))
         }
     }
 
@@ -108,7 +134,7 @@ struct ThemeRoot: ViewModifier {
             .environment(\.theme, theme)
             .tint(theme.accent)
             .background(theme.paper ?? Color.clear)
-            .preferredColorScheme(theme.isCustom ? .light : nil)
+            .preferredColorScheme(theme.isDark ? .dark : (theme.isCustom ? .light : nil))
     }
 }
 
@@ -127,7 +153,7 @@ struct ThemedPanel: ViewModifier {
         return content
             // A translucent tint goes over white, not over the panel's grey, so it stays clean.
             .background(shape.fill(wash ?? Color.clear).opacity(theme.isCustom ? 1 : 0))
-            .background(shape.fill(Color.white).opacity(theme.isCustom && wash != nil && !solid ? 1 : 0))
+            .background(shape.fill(theme.isDark ? look.fill : Color.white).opacity(theme.isCustom && wash != nil && !solid ? 1 : 0))
             .background(
                 shape.fill(look.fill)
                     .shadow(color: .black.opacity(look.softShadow > 0 ? 0.10 : 0),
