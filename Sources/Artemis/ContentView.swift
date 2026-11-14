@@ -182,15 +182,15 @@ struct ContentView: View {
         return VStack(spacing: 10) {
             HStack(spacing: 10 + theme.gap * 2) {
                 StatTile(title: "No sandbox", count: open, symbol: "lock.open.fill",
-                         tint: Palette.orange, isActive: filter == .unprotected) { filter = .unprotected }
+                         tint: Palette.orange, isActive: filter == .unprotected) { withAnimation(.smooth) { filter = .unprotected } }
                 StatTile(title: exposedNow == 0 ? "Managed" : "Managed · \(exposedNow) unprotected",
                          count: managed,
                          symbol: exposedNow == 0 ? "shield.lefthalf.filled" : "exclamationmark.shield.fill",
-                         tint: exposedNow == 0 ? Palette.blue : Palette.red, isActive: filter == .managed) { filter = .managed }
+                         tint: exposedNow == 0 ? Palette.blue : Palette.red, isActive: filter == .managed) { withAnimation(.smooth) { filter = .managed } }
                 StatTile(title: "Sandboxed", count: sandboxed, symbol: "lock.shield.fill",
-                         tint: Palette.green, isActive: filter == .sandboxed) { filter = .sandboxed }
+                         tint: Palette.green, isActive: filter == .sandboxed) { withAnimation(.smooth) { filter = .sandboxed } }
                 StatTile(title: "All applications", count: total, symbol: "square.grid.2x2.fill",
-                         tint: .accentColor, isActive: filter == .all) { filter = .all }
+                         tint: .accentColor, isActive: filter == .all) { withAnimation(.smooth) { filter = .all } }
             }
             CoverageBar(sandboxed: sandboxed, total: total)
         }
@@ -212,49 +212,70 @@ struct ContentView: View {
     private var standardTable: some View {
         Table(visible, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Application", value: \.name) { app in
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
                         .resizable()
-                        .frame(width: 20, height: 20)
-                    Text(app.name)
-                    if app.runtime == .unsandboxed {
-                        Circle().fill(Palette.orange).frame(width: 6, height: 6)
-                            .help(seatbelts.entries[app.id] != nil
-                                  ? "Running right now without its seatbelt"
-                                  : "Running right now without a sandbox")
-                    } else if app.runtime == .sandboxed && seatbelts.entries[app.id] != nil {
-                        Circle().fill(Palette.blue).frame(width: 6, height: 6)
-                            .help("Running right now with its seatbelt")
+                        .frame(width: 28, height: 28)
+                        .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
+                            Text(app.name).font(.body.weight(.medium)).lineLimit(1)
+                            if app.runtime == .unsandboxed {
+                                LiveDot(color: Palette.orange)
+                                    .help(seatbelts.entries[app.id] != nil
+                                          ? "Running right now without its seatbelt"
+                                          : "Running right now without a sandbox")
+                            } else if app.runtime == .sandboxed && seatbelts.entries[app.id] != nil {
+                                LiveDot(color: Palette.blue)
+                                    .help("Running right now with its seatbelt")
+                            }
+                        }
+                        Text(app.version.isEmpty ? app.sourceLabel : "\(app.sourceLabel) · \(app.version)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
+                .padding(.vertical, 3)
             }
-            .width(min: 160, ideal: 220)
+            .width(min: 180, ideal: 240)
 
             TableColumn("Exposure", value: \.riskScore) { app in
-                ExposureBadge(exposure: app.exposure)
+                ExposureMeter(exposure: app.exposure)
             }
-            .width(min: 110, ideal: 130)
+            .width(min: 150, ideal: 175)
 
             TableColumn("Sandbox", value: \.statusLabel) { app in
-                StatusBadge(app: app, isManaged: seatbelts.entries[app.id] != nil)
+                SandboxGlyph(app: app, isManaged: seatbelts.entries[app.id] != nil)
             }
-            .width(min: 100, ideal: 115)
+            .width(min: 120, ideal: 140)
 
             TableColumn("Manage") { app in
-                if seatbelts.entries[app.id] != nil {
-                    Label("Managed", systemImage: "shield.lefthalf.filled").foregroundStyle(Palette.blue)
-                } else if SeatbeltStore.isEligible(app) {
-                    Label("Can manage", systemImage: "plus.circle")
-                } else if app.isSandboxed {
-                    Text("Not needed").foregroundStyle(.tertiary)
-                } else {
-                    Label("Part of macOS", systemImage: "nosign").foregroundStyle(.secondary)
+                Group {
+                    if seatbelts.entries[app.id] != nil {
+                        Image(systemName: "shield.lefthalf.filled").foregroundStyle(Palette.blue)
+                            .help("Managed")
+                    } else if SeatbeltStore.isEligible(app) {
+                        Button { managing = app } label: {
+                            Image(systemName: "plus.circle.fill").symbolRenderingMode(.hierarchical)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Manage \(app.name)…")
+                    } else if app.isSandboxed {
+                        Image(systemName: "minus").foregroundStyle(.quaternary).help("Not needed: already sandboxed")
+                    } else {
+                        Image(systemName: "applelogo").foregroundStyle(.tertiary).help("Part of macOS: can't be managed")
+                    }
                 }
+                .font(.body)
+                .frame(maxWidth: .infinity)
             }
-            .width(min: 100, ideal: 125)
+            .width(min: 56, ideal: 64)
 
-            TableColumn("Signature", value: \.signingLabel)
-                .width(min: 90, ideal: 130)
+            TableColumn("Signature", value: \.signingLabel) { app in
+                SignatureSeal(app: app)
+            }
+            .width(min: 110, ideal: 140)
         }
     }
 
@@ -460,12 +481,15 @@ struct StatTile: View {
                 Image(systemName: symbol)
                     .font(.title2)
                     .foregroundStyle(tint)
+                    .symbolEffect(.bounce, value: isActive)
                     .frame(width: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(count)")
                         .font(.system(.title, design: .rounded, weight: .semibold))
                         .monospacedDigit()
                         .lineLimit(1)
+                        .contentTransition(.numericText(value: Double(count)))
+                        .animation(.snappy, value: count)
                     Text(theme.uppercaseLabels ? title.uppercased() : title)
                         .font(themed ? .caption.weight(.medium) : .caption)
                         .foregroundStyle(.secondary)
@@ -506,12 +530,16 @@ struct CoverageBar: View {
         HStack(spacing: 10) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Palette.orange.opacity(0.55))
-                    Capsule().fill(Palette.green)
+                    Capsule().fill(Palette.orange.opacity(0.25))
+                    Capsule()
+                        .fill(LinearGradient(colors: [Palette.green.opacity(0.75), Palette.green],
+                                             startPoint: .leading, endPoint: .trailing))
                         .frame(width: max(0, geo.size.width * fraction))
+                        .shadow(color: Palette.green.opacity(0.35), radius: 3)
+                        .animation(.smooth(duration: 0.6), value: fraction)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 8)
             Text("\(Int((fraction * 100).rounded()))% sandboxed")
                 .font(.caption)
                 .monospacedDigit()

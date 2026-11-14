@@ -28,16 +28,20 @@ applications.
 
 Each row shows:
 
-- Exposure: whether the app pulls in outside content, acts for an agent, or
-  both (see [Exposure](#exposure)).
-- Sandbox: sandboxed, no sandbox, "N sandboxes" (see [Sandbox layers](#sandbox-layers)),
-  or managed by Artemis.
-- Manage: whether Artemis can manage it. "Can manage", "Managed", "Part of
-  macOS" (it can't), or "Not needed" (already sandboxed).
-- Signature and source: who signed it and where it came from.
+- Exposure: a five-bar heat meter that fills and warms with the app's
+  exposure, plus arrows for its two directions: down if it pulls in outside
+  content, up if it acts for an agent (see [Exposure](#exposure)).
+- Sandbox: a green shield (sandboxed), an open lock (none), a blue shield
+  (managed by Artemis), or a fanned stack of cards, one per sandbox, for apps
+  with their own (see [Sandbox layers](#sandbox-layers)).
+- Manage: a + button to manage it, a blue shield once managed, an Apple logo
+  for apps that are part of macOS (can't be managed), or a dash when it's
+  already sandboxed.
+- Signature: a seal, green when signed with the hardened runtime, amber for
+  ad hoc, red for unsigned, next to where it came from.
 
-An orange dot next to a name means that app is running without a sandbox
-right now.
+A pulsing orange dot next to a name means that app is running without a
+sandbox right now.
 
 Double-click an app to open the details sidebar. It is closed by default; the
 Details button in the toolbar also toggles it. Right-click an app for Manage,
