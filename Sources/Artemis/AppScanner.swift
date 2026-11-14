@@ -102,7 +102,7 @@ enum AppScanner {
             exposure: ExposureScanner.assess(bundle: codeURL, plist: plist, bundleID: bundleID,
                                              name: name, entitlements: info.entitlements),
             ownSandbox: ownSandbox,
-            sandboxLayers: SandboxLayerScanner.sandboxedLayerCount(bundle: codeURL, ownSandbox: ownSandbox)
+            sandboxLayerNames: SandboxLayerScanner.sandboxedLayerNames(bundle: codeURL, ownSandbox: ownSandbox)
         )
     }
 }

@@ -31,9 +31,18 @@ struct ExposureMeter: View {
                     .foregroundStyle(exposure.push.isEmpty ? Color.secondary.opacity(0.3) : Palette.red)
             }
             .font(.caption.weight(.bold))
-            Text(none ? "Quiet" : exposure.label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(none ? Color.secondary : .primary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(none ? "Quiet" : exposure.label)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(none ? Color.secondary : .primary)
+                if !none {
+                    Text(exposure.tags.prefix(3).joined(separator: " · ")
+                         + (exposure.tags.count > 3 ? " +\(exposure.tags.count - 3)" : ""))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
         }
         .animation(.smooth, value: filled)
         .help(none ? "No signs that it pulls in outside content or acts for an agent"
@@ -52,11 +61,36 @@ struct SandboxGlyph: View {
     var body: some View {
         HStack(spacing: 8) {
             mark.frame(width: 26, height: 18)
-            Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(isPlain ? Color.secondary : .primary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(isPlain ? Color.secondary : .primary)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(isPlain && app.runtime == .unsandboxed ? Palette.orange : Color.secondary)
+                    .lineLimit(1)
+            }
         }
         .help(help)
+    }
+
+    /// Second line: what the state means for this app.
+    private var detail: String {
+        if isManaged {
+            return app.runtime == .unsandboxed ? "Running without its seatbelt" : "Seatbelt by Artemis"
+        }
+        if app.isSandboxed {
+            if app.isIOSApp { return "iOS container" }
+            let extra = app.entitlements.filter { $0.key.hasPrefix("com.apple.security.") && $0.key != SandboxInspector.sandboxKey }.count
+            return extra == 0 ? "Container only" : "Container + \(extra) permission\(extra == 1 ? "" : "s")"
+        }
+        if app.isLayered {
+            return app.sandboxLayerNames.prefix(4).joined(separator: " · ") + " · main open"
+        }
+        if app.sandboxLayers > 0 {
+            return "\(app.sandboxLayers) sandboxed helper\(app.sandboxLayers == 1 ? "" : "s")"
+        }
+        return app.runtime == .unsandboxed ? "Running with full access" : "Full user access"
     }
 
     private var isPlain: Bool { !isManaged && !app.isSandboxed && !app.isLayered }

@@ -199,29 +199,29 @@ enum SandboxLayerScanner {
     }
 
     /// Counted while scanning, for the Sandbox column: sandboxed process kinds in the bundle.
-    static func sandboxedLayerCount(bundle: URL, ownSandbox: OwnSandbox?) -> Int {
-        var count = 0
+    static func sandboxedLayerNames(bundle: URL, ownSandbox: OwnSandbox?) -> [String] {
+        var names: [String] = []
         switch ownSandbox {
         case .chromium?:
-            let helpers = Set(chromiumHelpers(bundle.appendingPathComponent("Contents")).compactMap { name -> String? in
-                if name.hasSuffix("(Renderer).app") { return "renderer" }
-                if name.hasSuffix("(GPU).app") { return "gpu" }
-                if name.hasSuffix("(Plugin).app") { return "plugin" }
-                if name.hasSuffix(" Helper.app") { return "services" }
-                return nil
-            })
-            count = helpers.count
+            let helpers = chromiumHelpers(bundle.appendingPathComponent("Contents"))
+            for (suffix, label) in [("(Renderer).app", "Pages"), ("(GPU).app", "GPU"),
+                                    (" Helper.app", "Network"), ("(Plugin).app", "Plugins")]
+            where helpers.contains(where: { $0.hasSuffix(suffix) }) {
+                names.append(label)
+            }
         case .firefox?:
-            count = 5   // web content, GPU, media decoder, network, utility
+            names = ["Pages", "GPU", "Network", "Media", "Utility"]
         case nil:
             break
         }
         let fm = FileManager.default
         let xpc = bundle.appendingPathComponent("Contents/XPCServices")
-        for name in (try? fm.contentsOfDirectory(atPath: xpc.path)) ?? [] where name.hasSuffix(".xpc") {
-            if SandboxInspector.inspect(xpc.appendingPathComponent(name)).sandboxEntitlement { count += 1 }
+        for name in ((try? fm.contentsOfDirectory(atPath: xpc.path)) ?? []).sorted() where name.hasSuffix(".xpc") {
+            if SandboxInspector.inspect(xpc.appendingPathComponent(name)).sandboxEntitlement {
+                names.append((name as NSString).deletingPathExtension)
+            }
         }
-        return count
+        return names
     }
 
     /// Chromium keeps its helpers in Contents/Frameworks, either loose or inside

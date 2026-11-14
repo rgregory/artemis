@@ -24,6 +24,20 @@ struct Exposure: Hashable, Sendable {
     }
 
     var reasons: [String] { push + pull }
+
+    /// One or two words per reason, for the second line of the Exposure column.
+    var tags: [String] {
+        reasons.map { reason in
+            let table: [(String, String)] = [
+                ("AI assistant", "AI agent"), ("Terminal", "Terminal"), ("Developer tool", "Runs code"),
+                ("Automation", "Automation"), ("Can control", "Controls apps"), ("Web browser", "Browser"),
+                ("Receives messages", "Messages"), ("Downloads", "Syncs files"), ("Opens web", "Web links"),
+                ("Opens email", "Mail links"), ("Web pages and other apps", "URL scheme"),
+                ("Built on a web", "Web engine"), ("Declares that it accepts", "Listens"),
+            ]
+            return table.first { reason.hasPrefix($0.0) }?.1 ?? reason
+        }
+    }
 }
 
 /// Works out an app's exposure from its Info.plist, its bundle contents and a list of

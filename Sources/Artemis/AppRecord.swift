@@ -91,7 +91,8 @@ struct AppRecord: Identifiable, Hashable, Sendable {
     let ownSandbox: OwnSandbox?
     /// How many separately sandboxed process kinds the bundle ships (renderers, GPU, network,
     /// sandboxed XPC services), not counting the main process.
-    let sandboxLayers: Int
+    let sandboxLayerNames: [String]
+    var sandboxLayers: Int { sandboxLayerNames.count }
 
     /// No App Sandbox on the main process, but its helpers each run in a sandbox of their own.
     var isLayered: Bool { !isSandboxed && ownSandbox != nil }
