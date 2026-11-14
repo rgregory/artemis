@@ -90,7 +90,12 @@ struct AppRecord: Identifiable, Hashable, Sendable {
     /// Set when the app sandboxes its own helper processes.
     let ownSandbox: OwnSandbox?
 
-    var isBrowser: Bool { exposure.pull.contains { $0.hasPrefix("Web browser") } }
+    /// A known browser, or a Chromium/Firefox build that registers for web links (Chromium itself,
+    /// ungoogled-chromium and other builds whose bundle IDs aren't on the list).
+    var isBrowser: Bool {
+        exposure.pull.contains { $0.hasPrefix("Web browser") }
+            || (ownSandbox != nil && exposure.pull.contains("Opens web links"))
+    }
 
     /// For sorting: an app with no sandbox ranks by its exposure, a sandboxed one ranks last.
     var riskScore: Int { isSandboxed ? -1 : exposure.score }
